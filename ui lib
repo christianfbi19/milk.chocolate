@@ -1,16 +1,18 @@
 --[[
-    milk.chocolate UI Library v2.2
+    milk.chocolate UI Library v2.3
     A Linoria-style UI with multiple themes
-    Features: Key System, Notifications, Draggable Widgets, Themes, and more
+    Features: Key System, Notifications, Draggable Widgets, Themes, Configs, and more
     
-    Changes in v2.2:
-    - Fixed button/dropdown theme color persistence
-    - Added visible resize indicator (3 lines)
-    - Improved color picker with color wheel + RGB input
-    - Fixed dropdown theme line issues
-    - Improved text visibility (more white/bright)
-    - Added "Always", "Toggle", "Hold" keybind modes
-    - Added glow effects throughout UI
+    Changes in v2.3:
+    - Fixed button theme color persistence
+    - Fixed resize indicator lines
+    - Fixed toggle key not working
+    - Fixed slider decimal precision
+    - Added keybind support to buttons
+    - Tab highlight only on text
+    - Added config system (save/load/export/import)
+    - Simplified color picker
+    - Fixed watermark ping update frequency
 ]]
 
 local MilkChocolate = {}
@@ -25,6 +27,9 @@ local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
+
+-- Config folder
+local ConfigFolder = "milk.cfg"
 
 -- Theme Definitions
 local Themes = {
@@ -290,6 +295,20 @@ function Utility.GetTextSize(text, font, size)
     return game:GetService("TextService"):GetTextSize(text, size, font, Vector2.new(math.huge, math.huge))
 end
 
+function Utility.Round(number, decimalPlaces)
+    local mult = 10 ^ (decimalPlaces or 0)
+    return math.floor(number * mult + 0.5) / mult
+end
+
+function Utility.CleanNumber(value, increment)
+    if increment < 1 then
+        local decimalPlaces = #tostring(increment):match("%.(%d+)") or 0
+        return Utility.Round(value, decimalPlaces)
+    else
+        return math.floor(value + 0.5)
+    end
+end
+
 function Utility.MakeDraggable(dragElement, targetElement)
     local dragging = false
     local dragStart, startPos
@@ -354,63 +373,21 @@ function Utility.MakeResizable(resizeElement, targetElement, minSize, maxSize)
     end)
 end
 
-function Utility.HSVToRGB(h, s, v)
-    local r, g, b
-    local i = math.floor(h * 6)
-    local f = h * 6 - i
-    local p = v * (1 - s)
-    local q = v * (1 - f * s)
-    local t = v * (1 - (1 - f) * s)
-    
-    i = i % 6
-    
-    if i == 0 then r, g, b = v, t, p
-    elseif i == 1 then r, g, b = q, v, p
-    elseif i == 2 then r, g, b = p, v, t
-    elseif i == 3 then r, g, b = p, q, v
-    elseif i == 4 then r, g, b = t, p, v
-    elseif i == 5 then r, g, b = v, p, q
-    end
-    
-    return r, g, b
-end
-
-function Utility.RGBToHSV(r, g, b)
-    local max, min = math.max(r, g, b), math.min(r, g, b)
-    local h, s, v
-    v = max
-    
-    local d = max - min
-    if max == 0 then s = 0 else s = d / max end
-    
-    if max == min then
-        h = 0
-    else
-        if max == r then
-            h = (g - b) / d
-            if g < b then h = h + 6 end
-        elseif max == g then
-            h = (b - r) / d + 2
-        elseif max == b then
-            h = (r - g) / d + 4
-        end
-        h = h / 6
-    end
-    
-    return h, s, v
-end
-
 function Utility.SaveData(key, data)
     if writefile then
-        writefile("milk_chocolate_" .. key .. ".json", HttpService:JSONEncode(data))
+        local success, err = pcall(function()
+            writefile(key, HttpService:JSONEncode(data))
+        end)
+        return success
     end
+    return false
 end
 
 function Utility.LoadData(key)
     if isfile and readfile then
-        if isfile("milk_chocolate_" .. key .. ".json") then
+        if isfile(key) then
             local success, data = pcall(function()
-                return HttpService:JSONDecode(readfile("milk_chocolate_" .. key .. ".json"))
+                return HttpService:JSONDecode(readfile(key))
             end)
             if success then
                 return data
@@ -420,13 +397,51 @@ function Utility.LoadData(key)
     return nil
 end
 
+function Utility.EnsureFolder(folderName)
+    if isfolder and makefolder then
+        if not isfolder(folderName) then
+            makefolder(folderName)
+        end
+        return true
+    end
+    return false
+end
+
+function Utility.GetFiles(folderName)
+    if isfolder and listfiles then
+        if isfolder(folderName) then
+            return listfiles(folderName)
+        end
+    end
+    return {}
+end
+
+function Utility.DeleteFile(filePath)
+    if isfile and delfile then
+        if isfile(filePath) then
+            delfile(filePath)
+            return true
+        end
+    end
+    return false
+end
+
+-- Color utilities
+function Utility.ColorToTable(color)
+    return {R = color.R, G = color.G, B = color.B}
+end
+
+function Utility.TableToColor(t)
+    return Color3.new(t.R, t.G, t.B)
+end
+
 -- Key System
 function MilkChocolate.CreateKeySystem(config)
     local keyConfig = config or {}
     local requiredKey = keyConfig.Key or "milk.test"
     local title = keyConfig.Title or "milk.chocolate"
     
-    local savedData = Utility.LoadData("keydata")
+    local savedData = Utility.LoadData("milk_chocolate_keydata.json")
     if savedData and savedData.key == requiredKey and savedData.verified then
         return true
     end
@@ -473,7 +488,7 @@ function MilkChocolate.CreateKeySystem(config)
         Size = UDim2.new(1, 0, 0, 1),
     })
     
-    local milkLabel = Utility.Create("TextLabel", {
+    Utility.Create("TextLabel", {
         Parent = titleContainer,
         BackgroundTransparency = 1,
         Position = UDim2.new(0.5, -50, 0, 0),
@@ -485,7 +500,7 @@ function MilkChocolate.CreateKeySystem(config)
         TextXAlignment = Enum.TextXAlignment.Right,
     })
     
-    local chocolateLabel = Utility.Create("TextLabel", {
+    Utility.Create("TextLabel", {
         Parent = titleContainer,
         BackgroundTransparency = 1,
         Position = UDim2.new(0.5, -15, 0, 0),
@@ -497,7 +512,7 @@ function MilkChocolate.CreateKeySystem(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    local iconLabel = Utility.Create("TextLabel", {
+    Utility.Create("TextLabel", {
         Parent = mainFrame,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 0, 0, 50),
@@ -508,7 +523,7 @@ function MilkChocolate.CreateKeySystem(config)
         TextSize = 32,
     })
     
-    local subtitleLabel = Utility.Create("TextLabel", {
+    Utility.Create("TextLabel", {
         Parent = mainFrame,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 0, 0, 95),
@@ -593,7 +608,7 @@ function MilkChocolate.CreateKeySystem(config)
             statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             statusLabel.Text = "✓ Key verified! Loading..."
             
-            Utility.SaveData("keydata", {key = requiredKey, verified = true})
+            Utility.SaveData("milk_chocolate_keydata.json", {key = requiredKey, verified = true})
             
             verified = true
             task.wait(1)
@@ -643,10 +658,16 @@ function MilkChocolate.new(config)
     self.KeybindWidgetEntries = {}
     self.KeybindStates = {}
     self.Flags = {}
+    self.FlagCallbacks = {}
     self.ToggleKey = config.ToggleKey or Enum.KeyCode.RightShift
     self.Notifications = {}
     self.CurrentTheme = config.Theme or "Milk Chocolate"
     self.ThemeObjects = {}
+    self.ConfigName = config.ConfigName or "default"
+    self.Visible = true
+    
+    -- Ensure config folder exists
+    Utility.EnsureFolder(ConfigFolder)
     
     self:SetTheme(self.CurrentTheme)
     
@@ -674,154 +695,157 @@ function MilkChocolate:SetTheme(themeName)
 end
 
 function MilkChocolate:UpdateAllThemeColors()
-    -- Update registered theme objects
+    -- Update registered theme objects immediately
     for _, entry in ipairs(self.ThemeObjects) do
         if entry.Object and entry.Object.Parent then
-            local props = {}
             for prop, colorKey in pairs(entry.Properties) do
                 if Colors[colorKey] then
-                    props[prop] = Colors[colorKey]
+                    pcall(function()
+                        entry.Object[prop] = Colors[colorKey]
+                    end)
                 end
-            end
-            if next(props) then
-                Utility.Tween(entry.Object, props, 0.3)
             end
         end
     end
     
     -- Update main UI elements
     if self.MainFrame then
-        Utility.Tween(self.MainFrame, {BackgroundColor3 = Colors.Background}, 0.3)
+        self.MainFrame.BackgroundColor3 = Colors.Background
     end
     if self.MainStroke then
-        Utility.Tween(self.MainStroke, {Color = Colors.Accent}, 0.3)
+        self.MainStroke.Color = Colors.Accent
     end
     if self.MainGlow then
-        Utility.Tween(self.MainGlow, {ImageColor3 = Colors.AccentGlow, ImageTransparency = Colors.GlowTransparency}, 0.3)
+        self.MainGlow.ImageColor3 = Colors.AccentGlow
+        self.MainGlow.ImageTransparency = Colors.GlowTransparency
     end
     if self.TitleBar then
-        Utility.Tween(self.TitleBar, {BackgroundColor3 = Colors.BackgroundDark}, 0.3)
+        self.TitleBar.BackgroundColor3 = Colors.BackgroundDark
     end
     if self.MilkLabel then
-        Utility.Tween(self.MilkLabel, {TextColor3 = Colors.TitleGlow1}, 0.3)
+        self.MilkLabel.TextColor3 = Colors.TitleGlow1
     end
     if self.ChocolateLabel then
-        Utility.Tween(self.ChocolateLabel, {TextColor3 = Colors.TitleGlow2}, 0.3)
+        self.ChocolateLabel.TextColor3 = Colors.TitleGlow2
     end
     if self.TabContainer then
-        Utility.Tween(self.TabContainer, {BackgroundColor3 = Colors.BackgroundDark}, 0.3)
+        self.TabContainer.BackgroundColor3 = Colors.BackgroundDark
     end
     if self.ContentContainer then
-        Utility.Tween(self.ContentContainer, {BackgroundColor3 = Colors.Background}, 0.3)
+        self.ContentContainer.BackgroundColor3 = Colors.Background
     end
     if self.TitleSeparator then
-        Utility.Tween(self.TitleSeparator, {BackgroundColor3 = Colors.Accent}, 0.3)
+        self.TitleSeparator.BackgroundColor3 = Colors.Accent
     end
     if self.TabSeparator then
-        Utility.Tween(self.TabSeparator, {BackgroundColor3 = Colors.Border}, 0.3)
+        self.TabSeparator.BackgroundColor3 = Colors.Border
     end
     
     -- Update resize handle
     if self.ResizeHandle then
         for _, line in pairs(self.ResizeHandle:GetChildren()) do
             if line:IsA("Frame") then
-                Utility.Tween(line, {BackgroundColor3 = Colors.TextDark}, 0.3)
+                line.BackgroundColor3 = Colors.TextDark
             end
         end
     end
     
     -- Update watermark
     if self.Watermark then
-        Utility.Tween(self.Watermark, {BackgroundColor3 = Colors.Background}, 0.3)
+        self.Watermark.BackgroundColor3 = Colors.Background
     end
     if self.WatermarkStroke then
-        Utility.Tween(self.WatermarkStroke, {Color = Colors.Accent}, 0.3)
+        self.WatermarkStroke.Color = Colors.Accent
     end
     if self.WatermarkGlow then
-        Utility.Tween(self.WatermarkGlow, {ImageColor3 = Colors.AccentGlow, ImageTransparency = Colors.GlowTransparency}, 0.3)
+        self.WatermarkGlow.ImageColor3 = Colors.AccentGlow
+        self.WatermarkGlow.ImageTransparency = Colors.GlowTransparency
     end
     if self.WatermarkMilk then
-        Utility.Tween(self.WatermarkMilk, {TextColor3 = Colors.TitleGlow1}, 0.3)
+        self.WatermarkMilk.TextColor3 = Colors.TitleGlow1
     end
     if self.WatermarkChocolate then
-        Utility.Tween(self.WatermarkChocolate, {TextColor3 = Colors.TitleGlow2}, 0.3)
+        self.WatermarkChocolate.TextColor3 = Colors.TitleGlow2
     end
     if self.WatermarkStats then
-        Utility.Tween(self.WatermarkStats, {TextColor3 = Colors.Text}, 0.3)
+        self.WatermarkStats.TextColor3 = Colors.Text
     end
     
     -- Update keybind widget
     if self.KeybindWidget then
-        Utility.Tween(self.KeybindWidget, {BackgroundColor3 = Colors.Background}, 0.3)
+        self.KeybindWidget.BackgroundColor3 = Colors.Background
     end
     if self.KeybindWidgetStroke then
-        Utility.Tween(self.KeybindWidgetStroke, {Color = Colors.Accent}, 0.3)
+        self.KeybindWidgetStroke.Color = Colors.Accent
     end
     if self.KeybindWidgetGlow then
-        Utility.Tween(self.KeybindWidgetGlow, {ImageColor3 = Colors.AccentGlow, ImageTransparency = Colors.GlowTransparency}, 0.3)
+        self.KeybindWidgetGlow.ImageColor3 = Colors.AccentGlow
+        self.KeybindWidgetGlow.ImageTransparency = Colors.GlowTransparency
     end
     if self.KeybindSeparator then
-        Utility.Tween(self.KeybindSeparator, {BackgroundColor3 = Colors.Accent}, 0.3)
+        self.KeybindSeparator.BackgroundColor3 = Colors.Accent
     end
     if self.KeybindTitleLabel then
-        Utility.Tween(self.KeybindTitleLabel, {TextColor3 = Colors.Text}, 0.3)
+        self.KeybindTitleLabel.TextColor3 = Colors.Text
     end
     
     -- Update keybind entries
     for name, entry in pairs(self.KeybindWidgetEntries) do
         if entry.NameLabel then
             local isActive = self.KeybindStates[name] or false
-            Utility.Tween(entry.NameLabel, {TextColor3 = isActive and Colors.KeybindActive or Colors.Text}, 0.3)
+            entry.NameLabel.TextColor3 = isActive and Colors.KeybindActive or Colors.Text
         end
         if entry.KeyLabel then
-            Utility.Tween(entry.KeyLabel, {TextColor3 = Colors.Accent}, 0.3)
+            entry.KeyLabel.TextColor3 = Colors.Accent
         end
         if entry.ModeLabel then
-            Utility.Tween(entry.ModeLabel, {TextColor3 = Colors.TextDark}, 0.3)
+            entry.ModeLabel.TextColor3 = Colors.TextDark
         end
     end
     
     -- Update tabs
     for _, tab in ipairs(self.Tabs) do
         if tab.Button then
+            tab.Button.BackgroundColor3 = Colors.BackgroundDark
+            tab.Button.BackgroundTransparency = 1
             if self.ActiveTab == tab then
-                Utility.Tween(tab.Button, {BackgroundColor3 = Colors.BackgroundLight}, 0.3)
-                Utility.Tween(tab.ButtonLabel, {TextColor3 = Colors.Text}, 0.3)
-                if tab.Stroke then
-                    Utility.Tween(tab.Stroke, {Color = Colors.Accent, Transparency = 0}, 0.3)
+                tab.ButtonLabel.TextColor3 = Colors.Accent
+                if tab.Underline then
+                    tab.Underline.BackgroundColor3 = Colors.Accent
+                    tab.Underline.Visible = true
                 end
             else
-                Utility.Tween(tab.Button, {BackgroundColor3 = Colors.BackgroundDark, BackgroundTransparency = 1}, 0.3)
-                Utility.Tween(tab.ButtonLabel, {TextColor3 = Colors.TextDark}, 0.3)
-                if tab.Stroke then
-                    Utility.Tween(tab.Stroke, {Color = Colors.Border, Transparency = 1}, 0.3)
+                tab.ButtonLabel.TextColor3 = Colors.TextDark
+                if tab.Underline then
+                    tab.Underline.Visible = false
                 end
             end
         end
         if tab.Content then
-            Utility.Tween(tab.Content, {ScrollBarImageColor3 = Colors.Accent}, 0.3)
+            tab.Content.ScrollBarImageColor3 = Colors.Accent
         end
         
         -- Update sections
         for _, section in ipairs(tab.Sections or {}) do
             if section.Frame then
-                Utility.Tween(section.Frame, {BackgroundColor3 = Colors.BackgroundDark}, 0.3)
+                section.Frame.BackgroundColor3 = Colors.BackgroundDark
             end
             if section.Stroke then
-                Utility.Tween(section.Stroke, {Color = Colors.Border}, 0.3)
+                section.Stroke.Color = Colors.Border
             end
             if section.Title then
-                Utility.Tween(section.Title, {TextColor3 = Colors.Text}, 0.3)
+                section.Title.TextColor3 = Colors.Text
             end
             if section.TitleContainer then
                 for _, child in pairs(section.TitleContainer:GetChildren()) do
                     if child:IsA("Frame") and child.Name == "Separator" then
-                        Utility.Tween(child, {BackgroundColor3 = Colors.Accent}, 0.3)
+                        child.BackgroundColor3 = Colors.Accent
                     end
                 end
             end
             if section.SectionGlow then
-                Utility.Tween(section.SectionGlow, {ImageColor3 = Colors.AccentGlow, ImageTransparency = Colors.GlowTransparency + 0.05}, 0.3)
+                section.SectionGlow.ImageColor3 = Colors.AccentGlow
+                section.SectionGlow.ImageTransparency = Colors.GlowTransparency + 0.05
             end
         end
     end
@@ -894,26 +918,26 @@ function MilkChocolate:CreateGui()
         Size = UDim2.new(1, 0, 0, 1),
     })
     
-    -- Resize Handle with visible lines
+    -- Resize Handle - Fixed diagonal lines
     self.ResizeHandle = Utility.Create("Frame", {
         Name = "ResizeHandle",
         Parent = self.MainFrame,
         BackgroundTransparency = 1,
-        Position = UDim2.new(1, -20, 1, -20),
-        Size = UDim2.new(0, 18, 0, 18),
+        Position = UDim2.new(1, -16, 1, -16),
+        Size = UDim2.new(0, 14, 0, 14),
         ZIndex = 10,
     })
     
-    -- Create 3 diagonal lines for resize indicator
+    -- Create 3 proper diagonal lines
     for i = 1, 3 do
-        local offset = (i - 1) * 5
         Utility.Create("Frame", {
             Name = "Line" .. i,
             Parent = self.ResizeHandle,
             BackgroundColor3 = Colors.TextDark,
             BorderSizePixel = 0,
-            Position = UDim2.new(0, 2 + offset, 1, -4 - offset),
-            Size = UDim2.new(0, 12 - offset, 0, 2),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, (i - 2) * 3, 0.5, (i - 2) * 3),
+            Size = UDim2.new(0, 8, 0, 1),
             Rotation = -45,
             ZIndex = 10,
         })
@@ -1040,16 +1064,29 @@ function MilkChocolate:CreateWatermark()
     
     Utility.MakeDraggable(self.Watermark, self.Watermark)
     
-    RunService.RenderStepped:Connect(function()
-        local fps = math.floor(1 / RunService.RenderStepped:Wait())
-        local ping = math.floor(Player:GetNetworkPing() * 1000)
-        local time = os.date("%H:%M:%S")
+    -- Faster ping/FPS update
+    local lastPing = 0
+    local frameCount = 0
+    local lastTime = tick()
+    local fps = 60
+    
+    RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        local now = tick()
         
-        local text = string.format("| FPS: %d | Ping: %dms | %s", fps, ping, time)
-        self.WatermarkStats.Text = text
-        
-        local totalWidth = 98 + Utility.GetTextSize(text, Enum.Font.Gotham, 11).X + 10
-        Utility.Tween(self.Watermark, {Size = UDim2.new(0, totalWidth, 0, 26)}, 0.1)
+        if now - lastTime >= 0.5 then
+            fps = math.floor(frameCount / (now - lastTime))
+            frameCount = 0
+            lastTime = now
+            lastPing = math.floor(Player:GetNetworkPing() * 1000)
+            
+            local time = os.date("%H:%M:%S")
+            local text = string.format("| FPS: %d | Ping: %dms | %s", fps, lastPing, time)
+            self.WatermarkStats.Text = text
+            
+            local totalWidth = 98 + Utility.GetTextSize(text, Enum.Font.Gotham, 11).X + 10
+            self.Watermark.Size = UDim2.new(0, totalWidth, 0, 26)
+        end
     end)
 end
 
@@ -1208,9 +1245,7 @@ function MilkChocolate:SetKeybindState(name, isActive)
     
     local entry = self.KeybindWidgetEntries[name]
     if entry and entry.NameLabel then
-        Utility.Tween(entry.NameLabel, {
-            TextColor3 = isActive and Colors.KeybindActive or Colors.Text
-        }, 0.15)
+        entry.NameLabel.TextColor3 = isActive and Colors.KeybindActive or Colors.Text
     end
 end
 
@@ -1290,7 +1325,7 @@ function MilkChocolate:Notify(config)
         Size = UDim2.new(0, 3, 1, 0),
     })
     
-    local titleLabel = Utility.Create("TextLabel", {
+    Utility.Create("TextLabel", {
         Parent = notification,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 12, 0, 8),
@@ -1347,21 +1382,237 @@ function MilkChocolate:SetupInput()
         if gameProcessed then return end
         
         if input.KeyCode == self.ToggleKey then
-            self.MainFrame.Visible = not self.MainFrame.Visible
+            self.Visible = not self.Visible
+            self.MainFrame.Visible = self.Visible
         end
     end)
 end
 
 function MilkChocolate:Toggle(visible)
     if visible ~= nil then
-        self.MainFrame.Visible = visible
+        self.Visible = visible
     else
-        self.MainFrame.Visible = not self.MainFrame.Visible
+        self.Visible = not self.Visible
     end
+    self.MainFrame.Visible = self.Visible
 end
 
 function MilkChocolate:Destroy()
     self.ScreenGui:Destroy()
+end
+
+-- Config System
+function MilkChocolate:SaveConfig(name)
+    name = name or self.ConfigName
+    local configData = {
+        theme = self.CurrentTheme,
+        flags = {}
+    }
+    
+    for flag, value in pairs(self.Flags) do
+        if typeof(value) == "Color3" then
+            configData.flags[flag] = {type = "Color3", value = Utility.ColorToTable(value)}
+        elseif typeof(value) == "EnumItem" then
+            configData.flags[flag] = {type = "EnumItem", value = tostring(value)}
+        elseif type(value) == "table" then
+            configData.flags[flag] = {type = "table", value = value}
+        else
+            configData.flags[flag] = {type = type(value), value = value}
+        end
+    end
+    
+    local path = ConfigFolder .. "/" .. name .. ".json"
+    local success = Utility.SaveData(path, configData)
+    
+    if success then
+        self:Notify({
+            Title = "Config Saved",
+            Content = "Saved config: " .. name,
+            Type = "Success",
+            Duration = 2
+        })
+    else
+        self:Notify({
+            Title = "Error",
+            Content = "Failed to save config!",
+            Type = "Error",
+            Duration = 2
+        })
+    end
+    
+    return success
+end
+
+function MilkChocolate:LoadConfig(name)
+    name = name or self.ConfigName
+    local path = ConfigFolder .. "/" .. name .. ".json"
+    local configData = Utility.LoadData(path)
+    
+    if not configData then
+        self:Notify({
+            Title = "Error",
+            Content = "Config not found: " .. name,
+            Type = "Error",
+            Duration = 2
+        })
+        return false
+    end
+    
+    -- Apply theme
+    if configData.theme then
+        self:SetTheme(configData.theme)
+    end
+    
+    -- Apply flags
+    for flag, data in pairs(configData.flags) do
+        local value
+        if data.type == "Color3" then
+            value = Utility.TableToColor(data.value)
+        elseif data.type == "EnumItem" then
+            local enumType, enumValue = data.value:match("Enum%.(%w+)%.(%w+)")
+            if enumType and enumValue then
+                value = Enum[enumType][enumValue]
+            end
+        elseif data.type == "table" then
+            value = data.value
+        else
+            value = data.value
+        end
+        
+        self.Flags[flag] = value
+        
+        -- Call callback if exists
+        if self.FlagCallbacks[flag] then
+            pcall(self.FlagCallbacks[flag], value)
+        end
+    end
+    
+    self.ConfigName = name
+    
+    self:Notify({
+        Title = "Config Loaded",
+        Content = "Loaded config: " .. name,
+        Type = "Success",
+        Duration = 2
+    })
+    
+    return true
+end
+
+function MilkChocolate:DeleteConfig(name)
+    local path = ConfigFolder .. "/" .. name .. ".json"
+    local success = Utility.DeleteFile(path)
+    
+    if success then
+        self:Notify({
+            Title = "Config Deleted",
+            Content = "Deleted config: " .. name,
+            Type = "Info",
+            Duration = 2
+        })
+    end
+    
+    return success
+end
+
+function MilkChocolate:GetConfigs()
+    local configs = {}
+    local files = Utility.GetFiles(ConfigFolder)
+    
+    for _, file in pairs(files) do
+        local name = file:match("([^/\\]+)%.json$")
+        if name then
+            table.insert(configs, name)
+        end
+    end
+    
+    return configs
+end
+
+function MilkChocolate:ExportConfig()
+    local configData = {
+        theme = self.CurrentTheme,
+        flags = {}
+    }
+    
+    for flag, value in pairs(self.Flags) do
+        if typeof(value) == "Color3" then
+            configData.flags[flag] = {type = "Color3", value = Utility.ColorToTable(value)}
+        elseif typeof(value) == "EnumItem" then
+            configData.flags[flag] = {type = "EnumItem", value = tostring(value)}
+        elseif type(value) == "table" then
+            configData.flags[flag] = {type = "table", value = value}
+        else
+            configData.flags[flag] = {type = type(value), value = value}
+        end
+    end
+    
+    local encoded = HttpService:JSONEncode(configData)
+    
+    if setclipboard then
+        setclipboard(encoded)
+        self:Notify({
+            Title = "Config Exported",
+            Content = "Config copied to clipboard!",
+            Type = "Success",
+            Duration = 2
+        })
+    end
+    
+    return encoded
+end
+
+function MilkChocolate:ImportConfig(data)
+    local success, configData = pcall(function()
+        return HttpService:JSONDecode(data)
+    end)
+    
+    if not success or not configData then
+        self:Notify({
+            Title = "Error",
+            Content = "Invalid config data!",
+            Type = "Error",
+            Duration = 2
+        })
+        return false
+    end
+    
+    -- Apply theme
+    if configData.theme then
+        self:SetTheme(configData.theme)
+    end
+    
+    -- Apply flags
+    for flag, flagData in pairs(configData.flags) do
+        local value
+        if flagData.type == "Color3" then
+            value = Utility.TableToColor(flagData.value)
+        elseif flagData.type == "EnumItem" then
+            local enumType, enumValue = flagData.value:match("Enum%.(%w+)%.(%w+)")
+            if enumType and enumValue then
+                value = Enum[enumType][enumValue]
+            end
+        elseif flagData.type == "table" then
+            value = flagData.value
+        else
+            value = flagData.value
+        end
+        
+        self.Flags[flag] = value
+        
+        if self.FlagCallbacks[flag] then
+            pcall(self.FlagCallbacks[flag], value)
+        end
+    end
+    
+    self:Notify({
+        Title = "Config Imported",
+        Content = "Config imported successfully!",
+        Type = "Success",
+        Duration = 2
+    })
+    
+    return true
 end
 
 -- Tab Class
@@ -1376,13 +1627,13 @@ function MilkChocolate:AddTab(config)
     tab.Library = self
     tab.Sections = {}
     
+    -- Tab Button - just text with underline
     tab.Button = Utility.Create("TextButton", {
         Name = tab.Name,
         Parent = self.TabList,
-        BackgroundColor3 = Colors.BackgroundLight,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Size = UDim2.new(0, 0, 1, -4),
+        Size = UDim2.new(0, 0, 1, 0),
         AutomaticSize = Enum.AutomaticSize.X,
         Font = Enum.Font.Gotham,
         Text = "",
@@ -1391,20 +1642,30 @@ function MilkChocolate:AddTab(config)
     
     Utility.Create("UIPadding", {
         Parent = tab.Button,
-        PaddingLeft = UDim.new(0, 12),
-        PaddingRight = UDim.new(0, 12),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
     })
-    
-    tab.Stroke = Utility.CreateStroke(tab.Button, Colors.Border, 1, 1)
     
     tab.ButtonLabel = Utility.Create("TextLabel", {
         Parent = tab.Button,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0),
+        Size = UDim2.new(1, 0, 1, -4),
+        Position = UDim2.new(0, 0, 0, 0),
         Font = Enum.Font.Gotham,
         Text = tab.Name,
         TextColor3 = Colors.TextDark,
         TextSize = 11,
+    })
+    
+    -- Underline for selected tab (text highlight only)
+    tab.Underline = Utility.Create("Frame", {
+        Name = "Underline",
+        Parent = tab.Button,
+        BackgroundColor3 = Colors.Accent,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 1, -2),
+        Size = UDim2.new(1, 0, 0, 2),
+        Visible = false,
     })
     
     tab.Content = Utility.Create("ScrollingFrame", {
@@ -1452,23 +1713,18 @@ function MilkChocolate:AddTab(config)
     
     tab.Button.MouseEnter:Connect(function()
         if self.ActiveTab ~= tab then
-            Utility.Tween(tab.Button, {BackgroundTransparency = 0.8, BackgroundColor3 = Colors.BackgroundLight}, 0.15)
-            Utility.Tween(tab.Stroke, {Transparency = 0, Color = Colors.BorderHover}, 0.15)
             Utility.Tween(tab.ButtonLabel, {TextColor3 = Colors.Accent}, 0.15)
         end
     end)
     
     tab.Button.MouseLeave:Connect(function()
         if self.ActiveTab ~= tab then
-            Utility.Tween(tab.Button, {BackgroundTransparency = 1}, 0.15)
-            Utility.Tween(tab.Stroke, {Transparency = 1, Color = Colors.Border}, 0.15)
             Utility.Tween(tab.ButtonLabel, {TextColor3 = Colors.TextDark}, 0.15)
         end
     end)
     
     tab.Button.MouseButton1Click:Connect(function()
         self:SelectTab(tab)
-        Utility.Ripple(tab.Button)
     end)
     
     table.insert(self.Tabs, tab)
@@ -1482,16 +1738,15 @@ end
 
 function MilkChocolate:SelectTab(tab)
     if self.ActiveTab then
-        Utility.Tween(self.ActiveTab.Button, {BackgroundTransparency = 1}, 0.2)
-        Utility.Tween(self.ActiveTab.Stroke, {Transparency = 1, Color = Colors.Border}, 0.2)
-        Utility.Tween(self.ActiveTab.ButtonLabel, {TextColor3 = Colors.TextDark}, 0.2)
+        self.ActiveTab.ButtonLabel.TextColor3 = Colors.TextDark
+        self.ActiveTab.Underline.Visible = false
         self.ActiveTab.Content.Visible = false
     end
     
     self.ActiveTab = tab
-    Utility.Tween(tab.Button, {BackgroundTransparency = 0.7, BackgroundColor3 = Colors.BackgroundLight}, 0.2)
-    Utility.Tween(tab.Stroke, {Transparency = 0, Color = Colors.Accent}, 0.2)
-    Utility.Tween(tab.ButtonLabel, {TextColor3 = Colors.Text}, 0.2)
+    tab.ButtonLabel.TextColor3 = Colors.Accent
+    tab.Underline.BackgroundColor3 = Colors.Accent
+    tab.Underline.Visible = true
     tab.Content.Visible = true
 end
 
@@ -1596,13 +1851,28 @@ function Section:AddButton(config)
     config = config or {}
     local name = config.Name or "Button"
     local callback = config.Callback or function() end
+    local keybind = config.Keybind
+    local flag = config.Flag
     
-    local button = Utility.Create("TextButton", {
+    local currentKey = keybind or Enum.KeyCode.Unknown
+    local listening = false
+    
+    local container = Utility.Create("Frame", {
         Name = name,
         Parent = self.Content,
         BackgroundColor3 = Colors.BackgroundLight,
         BorderSizePixel = 0,
         Size = UDim2.new(1, 0, 0, 28),
+    })
+    
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    
+    local button = Utility.Create("TextButton", {
+        Name = "Button",
+        Parent = container,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(1, keybind ~= nil and -55 or 0, 1, 0),
         Font = Enum.Font.Gotham,
         Text = name,
         TextColor3 = Colors.Text,
@@ -1610,27 +1880,116 @@ function Section:AddButton(config)
         AutoButtonColor = false,
     })
     
-    local stroke = Utility.CreateStroke(button, Colors.Border, 1)
+    local keybindButton
+    if keybind ~= nil or config.ShowKeybind then
+        keybindButton = Utility.Create("TextButton", {
+            Name = "KeybindButton",
+            Parent = container,
+            BackgroundColor3 = Colors.Dropdown,
+            BorderSizePixel = 0,
+            Position = UDim2.new(1, -50, 0.5, -10),
+            Size = UDim2.new(0, 45, 0, 20),
+            Font = Enum.Font.Gotham,
+            Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name,
+            TextColor3 = Colors.Accent,
+            TextSize = 9,
+            AutoButtonColor = false,
+        })
+        
+        local keybindStroke = Utility.CreateStroke(keybindButton, Colors.Border, 1)
+        
+        button.Size = UDim2.new(1, -55, 1, 0)
+        
+        keybindButton.MouseButton1Click:Connect(function()
+            listening = true
+            keybindButton.Text = "..."
+            Utility.Tween(keybindStroke, {Color = Colors.Accent}, 0.15)
+        end)
+        
+        keybindButton.MouseEnter:Connect(function()
+            if not listening then
+                Utility.Tween(keybindStroke, {Color = Colors.AccentLight}, 0.15)
+            end
+        end)
+        
+        keybindButton.MouseLeave:Connect(function()
+            if not listening then
+                Utility.Tween(keybindStroke, {Color = Colors.Border}, 0.15)
+            end
+        end)
+        
+        self.Tab.Library:RegisterThemeObject(keybindButton, {BackgroundColor3 = "Dropdown", TextColor3 = "Accent"})
+        self.Tab.Library:RegisterThemeObject(keybindStroke, {Color = "Border"})
+    end
     
-    self.Tab.Library:RegisterThemeObject(button, {BackgroundColor3 = "BackgroundLight", TextColor3 = "Text"})
-    self.Tab.Library:RegisterThemeObject(stroke, {Color = "Border"})
+    self.Tab.Library:RegisterThemeObject(container, {BackgroundColor3 = "BackgroundLight"})
+    self.Tab.Library:RegisterThemeObject(containerStroke, {Color = "Border"})
+    self.Tab.Library:RegisterThemeObject(button, {TextColor3 = "Text"})
     
     button.MouseEnter:Connect(function()
-        Utility.Tween(button, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.15)
-        Utility.Tween(stroke, {Color = Colors.AccentLight}, 0.15)
+        Utility.Tween(container, {BackgroundColor3 = Colors.Accent}, 0.15)
+        Utility.Tween(button, {TextColor3 = Colors.PastelCream}, 0.15)
+        Utility.Tween(containerStroke, {Color = Colors.AccentLight}, 0.15)
     end)
     
     button.MouseLeave:Connect(function()
-        Utility.Tween(button, {BackgroundColor3 = Colors.BackgroundLight, TextColor3 = Colors.Text}, 0.15)
-        Utility.Tween(stroke, {Color = Colors.Border}, 0.15)
+        Utility.Tween(container, {BackgroundColor3 = Colors.BackgroundLight}, 0.15)
+        Utility.Tween(button, {TextColor3 = Colors.Text}, 0.15)
+        Utility.Tween(containerStroke, {Color = Colors.Border}, 0.15)
     end)
     
     button.MouseButton1Click:Connect(function()
-        Utility.Ripple(button)
+        Utility.Ripple(container)
         callback()
     end)
     
-    return button
+    -- Keybind input handling
+    if keybind ~= nil or config.ShowKeybind then
+        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if listening then
+                if input.UserInputType == Enum.UserInputType.Keyboard then
+                    if input.KeyCode == Enum.KeyCode.Backspace then
+                        currentKey = Enum.KeyCode.Unknown
+                    else
+                        currentKey = input.KeyCode
+                    end
+                    
+                    keybindButton.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+                    listening = false
+                    
+                    if flag then
+                        self.Tab.Library.Flags[flag] = currentKey
+                    end
+                end
+            elseif not gameProcessed and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
+                callback()
+                Utility.Ripple(container)
+            end
+        end)
+        
+        if flag then
+            self.Tab.Library.Flags[flag] = currentKey
+            self.Tab.Library.FlagCallbacks[flag] = function(value)
+                currentKey = value
+                keybindButton.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+            end
+        end
+    end
+    
+    return {
+        SetText = function(_, text)
+            button.Text = text
+        end,
+        SetKeybind = function(_, key)
+            if keybindButton then
+                currentKey = key
+                keybindButton.Text = currentKey == Enum.KeyCode.Unknown and "None" or currentKey.Name
+            end
+        end,
+        GetKeybind = function()
+            return currentKey
+        end
+    }
 end
 
 function Section:AddToggle(config)
@@ -1646,7 +2005,8 @@ function Section:AddToggle(config)
         Name = name,
         Parent = self.Content,
         BackgroundColor3 = Colors.BackgroundLight,
-        BorderSizePixel = 0,        Size = UDim2.new(1, 0, 0, 28),
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 28),
     })
     
     local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
@@ -1698,10 +2058,13 @@ function Section:AddToggle(config)
     self.Tab.Library:RegisterThemeObject(toggleStroke, {Color = "Border"})
     self.Tab.Library:RegisterThemeObject(checkmark, {TextColor3 = "PastelCream"})
     
-    local function updateToggle()
-        Utility.Tween(toggleBox, {BackgroundColor3 = toggled and Colors.Toggle or Colors.ToggleOff}, 0.2)
+    local function updateToggle(skipCallback)
+        toggleBox.BackgroundColor3 = toggled and Colors.Toggle or Colors.ToggleOff
         checkmark.Text = toggled and "✓" or ""
-        callback(toggled)
+        
+        if not skipCallback then
+            callback(toggled)
+        end
         
         if flag then
             self.Tab.Library.Flags[flag] = toggled
@@ -1729,9 +2092,13 @@ function Section:AddToggle(config)
     
     if flag then
         self.Tab.Library.Flags[flag] = toggled
+        self.Tab.Library.FlagCallbacks[flag] = function(value)
+            toggled = value
+            updateToggle(true)
+        end
     end
     
-    updateToggle()
+    updateToggle(true)
     
     return {
         Set = function(_, value)
@@ -1755,7 +2122,7 @@ function Section:AddSlider(config)
     local flag = config.Flag
     local suffix = config.Suffix or ""
     
-    local value = default
+    local value = Utility.CleanNumber(default, increment)
     
     local container = Utility.Create("Frame", {
         Name = name,
@@ -1828,16 +2195,19 @@ function Section:AddSlider(config)
     
     local dragging = false
     
-    local function updateSlider(input)
-        local pos = UDim2.new(math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1), 0, 1, 0)
-        sliderFill.Size = pos
+    local function updateSlider(input, skipCallback)
+        local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        sliderFill.Size = UDim2.new(pos, 0, 1, 0)
         
-        local rawValue = min + ((max - min) * pos.X.Scale)
-        value = math.floor(rawValue / increment + 0.5) * increment
+        local rawValue = min + ((max - min) * pos)
+        value = Utility.CleanNumber(rawValue, increment)
         value = math.clamp(value, min, max)
         
         valueLabel.Text = tostring(value) .. suffix
-        callback(value)
+        
+        if not skipCallback then
+            callback(value)
+        end
         
         if flag then
             self.Tab.Library.Flags[flag] = value
@@ -1873,11 +2243,18 @@ function Section:AddSlider(config)
     
     if flag then
         self.Tab.Library.Flags[flag] = value
+        self.Tab.Library.FlagCallbacks[flag] = function(newValue)
+            value = Utility.CleanNumber(newValue, increment)
+            value = math.clamp(value, min, max)
+            sliderFill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+            valueLabel.Text = tostring(value) .. suffix
+        end
     end
     
     return {
         Set = function(_, newValue)
-            value = math.clamp(newValue, min, max)
+            value = Utility.CleanNumber(newValue, increment)
+            value = math.clamp(value, min, max)
             sliderFill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
             valueLabel.Text = tostring(value) .. suffix
             callback(value)
@@ -2001,7 +2378,7 @@ function Section:AddDropdown(config)
             })
             
             table.insert(optionButtons, optionButton)
-            self.Tab.Library:RegisterThemeObject(optionButton, {BackgroundColor3 = "Dropdown", TextColor3 = option == selected and "Accent" or "Text"})
+            self.Tab.Library:RegisterThemeObject(optionButton, {BackgroundColor3 = "Dropdown"})
             
             optionButton.MouseEnter:Connect(function()
                 Utility.Tween(optionButton, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.1)
@@ -2069,6 +2446,13 @@ function Section:AddDropdown(config)
     
     if flag then
         self.Tab.Library.Flags[flag] = selected
+        self.Tab.Library.FlagCallbacks[flag] = function(value)
+            selected = value
+            dropdownButton.Text = "  " .. tostring(selected)
+            for _, btn in pairs(optionButtons) do
+                btn.TextColor3 = btn.Text == "  " .. tostring(selected) and Colors.Accent or Colors.Text
+            end
+        end
     end
     
     return {
@@ -2268,7 +2652,7 @@ function Section:AddMultiDropdown(config)
         
         optionButton.MouseButton1Click:Connect(function()
             selected[option] = not selected[option]
-            Utility.Tween(checkbox, {BackgroundColor3 = selected[option] and Colors.Toggle or Colors.ToggleOff}, 0.15)
+            checkbox.BackgroundColor3 = selected[option] and Colors.Toggle or Colors.ToggleOff
             checkmark.Text = selected[option] and "✓" or ""
             updateButton()
         end)
@@ -2307,6 +2691,16 @@ function Section:AddMultiDropdown(config)
         Utility.Tween(label, {TextColor3 = Colors.Text}, 0.15)
     end)
     
+    if flag then
+        local selectedList = {}
+        for option, isSelected in pairs(selected) do
+            if isSelected then
+                table.insert(selectedList, option)
+            end
+        end
+        self.Tab.Library.Flags[flag] = selectedList
+    end
+    
     return {
         Set = function(_, values)
             selected = {}
@@ -2334,7 +2728,7 @@ function Section:AddKeybind(config)
     local callback = config.Callback or function() end
     local flag = config.Flag
     local showWidget = config.ShowWidget ~= false
-    local mode = config.Mode or "Hold" -- "Always", "Toggle", "Hold"
+    local mode = config.Mode or "Hold"
     
     local currentKey = default
     local listening = false
@@ -2370,7 +2764,6 @@ function Section:AddKeybind(config)
         return currentKey.Name
     end
     
-    -- Mode selector
     local modeButton = Utility.Create("TextButton", {
         Name = "ModeButton",
         Parent = container,
@@ -2426,7 +2819,6 @@ function Section:AddKeybind(config)
             end
         end
         
-        -- Update active state for "Always" mode
         if mode == "Always" then
             isActive = true
             self.Tab.Library:SetKeybindState(name, true)
@@ -2441,7 +2833,6 @@ function Section:AddKeybind(config)
         end
     end
     
-    -- Mode cycling
     local modes = {"Hold", "Toggle", "Always"}
     local modeIndex = 1
     for i, m in ipairs(modes) do
@@ -2456,7 +2847,6 @@ function Section:AddKeybind(config)
         mode = modes[modeIndex]
         modeButton.Text = mode
         
-        -- Reset state when changing modes
         if mode == "Always" then
             isActive = true
             self.Tab.Library:SetKeybindState(name, true)
@@ -2532,7 +2922,6 @@ function Section:AddKeybind(config)
                 self.Tab.Library:SetKeybindState(name, true)
                 callback(true)
             end
-            -- "Always" mode is always active, no need to handle
         end
     end)
     
@@ -2550,7 +2939,6 @@ function Section:AddKeybind(config)
         self.Tab.Library.Flags[flag] = currentKey
     end
     
-    -- Initialize "Always" mode
     if mode == "Always" then
         isActive = true
         callback(true)
@@ -2650,7 +3038,7 @@ function Section:AddColorPicker(config)
         BackgroundColor3 = Colors.Dropdown,
         BorderSizePixel = 0,
         Position = UDim2.new(0, 8, 0, 32),
-        Size = UDim2.new(1, -16, 0, 140),
+        Size = UDim2.new(1, -16, 0, 110),
         Visible = false,
     })
     
@@ -2662,57 +3050,52 @@ function Section:AddColorPicker(config)
     self.Tab.Library:RegisterThemeObject(colorButtonStroke, {Color = "Border"})
     self.Tab.Library:RegisterThemeObject(pickerContainer, {BackgroundColor3 = "Dropdown"})
     
-    -- Color wheel
-    local colorWheel = Utility.Create("ImageLabel", {
-        Name = "ColorWheel",
+    -- Saturation/Value picker
+    local svPicker = Utility.Create("ImageLabel", {
+        Name = "SVPicker",
         Parent = pickerContainer,
-        BackgroundTransparency = 1,
+        BackgroundColor3 = currentColor,
+        BorderSizePixel = 0,
         Position = UDim2.new(0, 5, 0, 5),
-        Size = UDim2.new(0, 100, 0, 100),
-        Image = "rbxassetid://6523286724", -- Color wheel image
+        Size = UDim2.new(1, -25, 0, 80),
+        Image = "rbxassetid://4155801252",
     })
     
-    local wheelCursor = Utility.Create("Frame", {
+    Utility.CreateStroke(svPicker, Colors.Border, 1)
+    
+    local svCursor = Utility.Create("Frame", {
         Name = "Cursor",
-        Parent = colorWheel,
+        Parent = svPicker,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Size = UDim2.new(0, 8, 0, 8),
         AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Position = UDim2.new(1, 0, 0, 0),
     })
     
     Utility.Create("UICorner", {
-        Parent = wheelCursor,
+        Parent = svCursor,
         CornerRadius = UDim.new(1, 0),
     })
     
-    Utility.CreateStroke(wheelCursor, Color3.new(0, 0, 0), 2)
+    Utility.CreateStroke(svCursor, Color3.new(0, 0, 0), 2)
     
-    -- Brightness slider
-    local brightnessBar = Utility.Create("Frame", {
-        Name = "BrightnessBar",
+    -- Hue bar
+    local hueBar = Utility.Create("ImageLabel", {
+        Name = "HueBar",
         Parent = pickerContainer,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 110, 0, 5),
-        Size = UDim2.new(0, 15, 0, 100),
+        Position = UDim2.new(1, -15, 0, 5),
+        Size = UDim2.new(0, 10, 0, 80),
+        Image = "rbxassetid://3641079629",
     })
     
-    local brightnessGradient = Utility.Create("UIGradient", {
-        Parent = brightnessBar,
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-            ColorSequenceKeypoint.new(1, Color3.new(0, 0, 0))
-        }),
-        Rotation = 90,
-    })
+    Utility.CreateStroke(hueBar, Colors.Border, 1)
     
-    Utility.CreateStroke(brightnessBar, Colors.Border, 1)
-    
-    local brightnessCursor = Utility.Create("Frame", {
+    local hueCursor = Utility.Create("Frame", {
         Name = "Cursor",
-        Parent = brightnessBar,
+        Parent = hueBar,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Size = UDim2.new(1, 4, 0, 4),
@@ -2720,108 +3103,36 @@ function Section:AddColorPicker(config)
         AnchorPoint = Vector2.new(0, 0.5),
     })
     
-    Utility.CreateStroke(brightnessCursor, Color3.new(0, 0, 0), 1)
+    Utility.CreateStroke(hueCursor, Color3.new(0, 0, 0), 1)
     
-    -- RGB Input section
-    local rgbContainer = Utility.Create("Frame", {
-        Name = "RGBContainer",
+    -- Hex input
+    local hexInput = Utility.Create("TextBox", {
+        Name = "HexInput",
         Parent = pickerContainer,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 130, 0, 5),
-        Size = UDim2.new(1, -140, 0, 100),
-    })
-    
-    local function createRGBInput(labelText, yPos, defaultValue)
-        local inputContainer = Utility.Create("Frame", {
-            Parent = rgbContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 0, 0, yPos),
-            Size = UDim2.new(1, 0, 0, 28),
-        })
-        
-        local inputLabel = Utility.Create("TextLabel", {
-            Parent = inputContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 0, 0, 0),
-            Size = UDim2.new(0, 20, 1, 0),
-            Font = Enum.Font.GothamBold,
-            Text = labelText,
-            TextColor3 = Colors.Text,
-            TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        local inputBox = Utility.Create("TextBox", {
-            Parent = inputContainer,
-            BackgroundColor3 = Colors.BackgroundLight,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 22, 0, 2),
-            Size = UDim2.new(1, -24, 0, 20),
-            Font = Enum.Font.Gotham,
-            Text = tostring(defaultValue),
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            ClearTextOnFocus = true,
-        })
-        
-        Utility.CreateStroke(inputBox, Colors.Border, 1)
-        
-        self.Tab.Library:RegisterThemeObject(inputLabel, {TextColor3 = "Text"})
-        self.Tab.Library:RegisterThemeObject(inputBox, {BackgroundColor3 = "BackgroundLight", TextColor3 = "Text"})
-        
-        return inputBox
-    end
-    
-    local rInput = createRGBInput("R", 0, math.floor(currentColor.R * 255))
-    local gInput = createRGBInput("G", 32, math.floor(currentColor.G * 255))
-    local bInput = createRGBInput("B", 64, math.floor(currentColor.B * 255))
-    
-    -- Preview
-    local previewLabel = Utility.Create("TextLabel", {
-        Parent = pickerContainer,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0, 110),
-        Size = UDim2.new(0, 50, 0, 20),
-        Font = Enum.Font.Gotham,
-        Text = "Preview:",
-        TextColor3 = Colors.TextDark,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    
-    local previewBox = Utility.Create("Frame", {
-        Name = "Preview",
-        Parent = pickerContainer,
-        BackgroundColor3 = currentColor,
+        BackgroundColor3 = Colors.BackgroundLight,
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 60, 0, 112),
-        Size = UDim2.new(1, -70, 0, 18),
+        Position = UDim2.new(0, 5, 0, 90),
+        Size = UDim2.new(1, -10, 0, 18),
+        Font = Enum.Font.Gotham,
+        Text = string.format("#%02X%02X%02X", math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255)),
+        TextColor3 = Colors.Text,
+        TextSize = 10,
+        ClearTextOnFocus = true,
     })
     
-    Utility.CreateStroke(previewBox, Colors.Border, 1)
-    
-    self.Tab.Library:RegisterThemeObject(previewLabel, {TextColor3 = "TextDark"})
+    Utility.CreateStroke(hexInput, Colors.Border, 1)
     
     local h, s, v = currentColor:ToHSV()
     
-    local function updateColor(skipInputs)
+    local function updateColor(skipCallback)
         currentColor = Color3.fromHSV(h, s, v)
         colorButton.BackgroundColor3 = currentColor
-        previewBox.BackgroundColor3 = currentColor
+        svPicker.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+        hexInput.Text = string.format("#%02X%02X%02X", math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255))
         
-        -- Update brightness gradient to show current hue
-        brightnessGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromHSV(h, s, 1)),
-            ColorSequenceKeypoint.new(1, Color3.new(0, 0, 0))
-        })
-        
-        if not skipInputs then
-            rInput.Text = tostring(math.floor(currentColor.R * 255))
-            gInput.Text = tostring(math.floor(currentColor.G * 255))
-            bInput.Text = tostring(math.floor(currentColor.B * 255))
+        if not skipCallback then
+            callback(currentColor)
         end
-        
-        callback(currentColor)
         
         if flag then
             self.Tab.Library.Flags[flag] = currentColor
@@ -2829,101 +3140,74 @@ function Section:AddColorPicker(config)
     end
     
     local function updateCursors()
-        -- Position wheel cursor based on hue and saturation
-        local angle = h * math.pi * 2
-        local radius = s * 50
-        local x = 50 + math.cos(angle) * radius
-        local y = 50 + math.sin(angle) * radius
-        wheelCursor.Position = UDim2.new(0, x, 0, y)
-        
-        -- Position brightness cursor
-        brightnessCursor.Position = UDim2.new(0, -2, 1 - v, 0)
+        svCursor.Position = UDim2.new(s, 0, 1 - v, 0)
+        hueCursor.Position = UDim2.new(0, -2, h, 0)
     end
     
     updateCursors()
     
-    -- Color wheel interaction
-    local wheelDragging = false
+    local svDragging, hueDragging = false, false
     
-    colorWheel.InputBegan:Connect(function(input)
+    svPicker.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            wheelDragging = true
+            svDragging = true
         end
     end)
     
-    colorWheel.InputEnded:Connect(function(input)
+    svPicker.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            wheelDragging = false
+            svDragging = false
         end
     end)
     
-    -- Brightness bar interaction
-    local brightnessDragging = false
-    
-    brightnessBar.InputBegan:Connect(function(input)
+    hueBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            brightnessDragging = true
+            hueDragging = true
         end
     end)
     
-    brightnessBar.InputEnded:Connect(function(input)
+    hueBar.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            brightnessDragging = false
+            hueDragging = false
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement then
-            if wheelDragging then
-                local centerX = colorWheel.AbsolutePosition.X + colorWheel.AbsoluteSize.X / 2
-                local centerY = colorWheel.AbsolutePosition.Y + colorWheel.AbsoluteSize.Y / 2
-                local dx = input.Position.X - centerX
-                local dy = input.Position.Y - centerY
-                
-                local angle = math.atan2(dy, dx)
-                h = (angle / (math.pi * 2)) % 1
-                
-                local distance = math.sqrt(dx * dx + dy * dy)
-                local maxRadius = colorWheel.AbsoluteSize.X / 2
-                s = math.clamp(distance / maxRadius, 0, 1)
-                
+            if svDragging then
+                s = math.clamp((input.Position.X - svPicker.AbsolutePosition.X) / svPicker.AbsoluteSize.X, 0, 1)
+                v = 1 - math.clamp((input.Position.Y - svPicker.AbsolutePosition.Y) / svPicker.AbsoluteSize.Y, 0, 1)
                 updateColor()
                 updateCursors()
-            elseif brightnessDragging then
-                local relativeY = (input.Position.Y - brightnessBar.AbsolutePosition.Y) / brightnessBar.AbsoluteSize.Y
-                v = 1 - math.clamp(relativeY, 0, 1)
-                
+            elseif hueDragging then
+                h = math.clamp((input.Position.Y - hueBar.AbsolutePosition.Y) / hueBar.AbsoluteSize.Y, 0, 1)
                 updateColor()
                 updateCursors()
             end
         end
     end)
     
-    -- RGB input handlers
-    local function onRGBInputChanged()
-        local r = tonumber(rInput.Text) or 0
-        local g = tonumber(gInput.Text) or 0
-        local b = tonumber(bInput.Text) or 0
-        
-        r = math.clamp(r, 0, 255) / 255
-        g = math.clamp(g, 0, 255) / 255
-        b = math.clamp(b, 0, 255) / 255
-        
-        h, s, v = Utility.RGBToHSV(r, g, b)
-        updateColor(true)
-        updateCursors()
-    end
-    
-    rInput.FocusLost:Connect(onRGBInputChanged)
-    gInput.FocusLost:Connect(onRGBInputChanged)
-    bInput.FocusLost:Connect(onRGBInputChanged)
+    hexInput.FocusLost:Connect(function()
+        local hex = hexInput.Text:gsub("#", "")
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16)
+            local g = tonumber(hex:sub(3, 4), 16)
+            local b = tonumber(hex:sub(5, 6), 16)
+            if r and g and b then
+                currentColor = Color3.fromRGB(r, g, b)
+                h, s, v = currentColor:ToHSV()
+                updateColor()
+                updateCursors()
+            end
+        end
+    end)
     
     colorButton.MouseButton1Click:Connect(function()
         opened = not opened
         pickerContainer.Visible = opened
         
         if opened then
-            Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 180)}, 0.2)
+            Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 150)}, 0.2)
         else
             Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 28)}, 0.2)
         end
@@ -2939,6 +3223,12 @@ function Section:AddColorPicker(config)
     
     if flag then
         self.Tab.Library.Flags[flag] = currentColor
+        self.Tab.Library.FlagCallbacks[flag] = function(color)
+            currentColor = color
+            h, s, v = color:ToHSV()
+            updateColor(true)
+            updateCursors()
+        end
     end
     
     return {
@@ -3062,6 +3352,9 @@ function Section:AddTextBox(config)
     
     if flag then
         self.Tab.Library.Flags[flag] = default
+        self.Tab.Library.FlagCallbacks[flag] = function(value)
+            textBox.Text = value
+        end
     end
     
     return {

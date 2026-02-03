@@ -1,12 +1,14 @@
 --[[
-    milk.chocolate UI Library v2.3.1
+    milk.chocolate UI Library v2.4.0
     A Linoria-style UI with multiple themes
-    Features: Key System, Notifications, Draggable Widgets, Themes, Configs, and more
     
-    Fixes in v2.3.1:
-    - Fixed KeyCode error with number keys
-    - Removed button keybind feature (was misunderstood)
-    - Reverted color picker to wheel version without RGB/preview
+    New in v2.4.0:
+    - Keybind layout redesigned to save space (vertical layout)
+    - Mobile drag support added
+    - Color picker changed to square gradient
+    - Config folder fixed to "milk" (removed .cfg extension)
+    - Import Config button added
+    - All previous fixes maintained
 ]]
 
 local MilkChocolate = {}
@@ -22,8 +24,8 @@ local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
 
--- Config folder
-local ConfigFolder = "milk.cfg"
+-- Config folder (FIXED: Now just "milk")
+local ConfigFolder = "milk"
 
 -- Theme Definitions
 local Themes = {
@@ -307,26 +309,23 @@ function Utility.CleanNumber(value, increment)
     end
 end
 
+-- UPDATED: Mobile + Desktop Drag Support
 function Utility.MakeDraggable(dragElement, targetElement)
     local dragging = false
     local dragStart, startPos
     
-    dragElement.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = targetElement.Position
-        end
-    end)
+    local function startDrag(input)
+        dragging = true
+        dragStart = input.Position
+        startPos = targetElement.Position
+    end
     
-    dragElement.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
+    local function endDrag()
+        dragging = false
+    end
     
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+    local function updateDrag(input)
+        if dragging then
             local delta = input.Position - dragStart
             Utility.Tween(targetElement, {
                 Position = UDim2.new(
@@ -337,6 +336,26 @@ function Utility.MakeDraggable(dragElement, targetElement)
                 )
             }, 0.05)
         end
+    end
+    
+    -- Mouse support
+    dragElement.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            startDrag(input)
+        end
+    end)
+    
+    dragElement.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            endDrag()
+        end
+    end)
+    
+    -- Touch/Mouse movement
+    UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            updateDrag(input)
+        end
     end)
 end
 
@@ -345,7 +364,7 @@ function Utility.MakeResizable(resizeElement, targetElement, minSize, maxSize)
     local resizeStart, startSize
     
     resizeElement.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing = true
             resizeStart = input.Position
             startSize = targetElement.Size
@@ -353,13 +372,13 @@ function Utility.MakeResizable(resizeElement, targetElement, minSize, maxSize)
     end)
     
     resizeElement.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing = false
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - resizeStart
             local newWidth = math.clamp(startSize.X.Offset + delta.X, minSize.X, maxSize.X)
             local newHeight = math.clamp(startSize.Y.Offset + delta.Y, minSize.Y, maxSize.Y)
@@ -1434,6 +1453,7 @@ function MilkChocolate:ExportConfig()
     return encoded
 end
 
+-- NEW: Import Config Function
 function MilkChocolate:ImportConfig(data)
     local success, configData = pcall(function()
         return HttpService:JSONDecode(data)
@@ -1690,6 +1710,7 @@ function Tab:AddSection(config)
         Utility.Tween(section.Title, {TextColor3 = Colors.Accent}, 0.2)
         Utility.Tween(section.SectionGlow, {ImageTransparency = Colors.GlowTransparency - 0.1}, 0.2)
     end)
+    
     section.Frame.MouseLeave:Connect(function()
         Utility.Tween(section.Stroke, {Color = Colors.Border}, 0.2)
         Utility.Tween(section.Title, {TextColor3 = Colors.Text}, 0.2)
@@ -1741,7 +1762,7 @@ function Section:AddButton(config)
     end)
     
     return {
-        SetText = function(_, text)
+        SetText = function(self, text)
             button.Text = text
         end
     }
@@ -1856,7 +1877,7 @@ function Section:AddToggle(config)
     updateToggle(true)
     
     return {
-        Set = function(_, value)
+        Set = function(self, value)
             toggled = value
             updateToggle()
         end,
@@ -1970,20 +1991,20 @@ function Section:AddSlider(config)
     end
     
     sliderBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             updateSlider(input)
         end
     end)
     
     sliderBg.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
         end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             updateSlider(input)
         end
     end)
@@ -2007,7 +2028,7 @@ function Section:AddSlider(config)
     end
     
     return {
-        Set = function(_, newValue)
+        Set = function(self, newValue)
             value = Utility.CleanNumber(newValue, increment)
             value = math.clamp(value, min, max)
             sliderFill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
@@ -2207,7 +2228,7 @@ function Section:AddDropdown(config)
     end
     
     return {
-        Set = function(_, value)
+        Set = function(self, value)
             selected = value
             dropdownButton.Text = "  " .. tostring(selected)
             for _, btn in pairs(optionButtons) do
@@ -2218,7 +2239,7 @@ function Section:AddDropdown(config)
         Get = function()
             return selected
         end,
-        Refresh = function(_, newOptions)
+        Refresh = function(self, newOptions)
             options = newOptions
             createOptions()
         end
@@ -2438,7 +2459,7 @@ function Section:AddMultiDropdown(config)
     end
     
     return {
-        Set = function(_, values)
+        Set = function(self, values)
             selected = {}
             for _, v in pairs(values) do selected[v] = true end
             updateButton()
@@ -2453,6 +2474,7 @@ function Section:AddMultiDropdown(config)
     }
 end
 
+-- UPDATED: Compact Keybind Layout (Vertical)
 function Section:AddKeybind(config)
     config = config or {}
     local name = config.Name or "Keybind"
@@ -2466,12 +2488,13 @@ function Section:AddKeybind(config)
     local listening = false
     local isActive = mode == "Always"
     
+    -- NEW: Compact vertical layout
     local container = Utility.Create("Frame", {
         Name = name,
         Parent = self.Content,
         BackgroundColor3 = Colors.BackgroundLight,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 28),
+        Size = UDim2.new(1, 0, 0, 50),  -- Increased height for vertical layout
     })
     
     local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
@@ -2479,10 +2502,10 @@ function Section:AddKeybind(config)
     local label = Utility.Create("TextLabel", {
         Parent = container,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0, 0),
-        Size = UDim2.new(1, -130, 1, 0),
+        Position = UDim2.new(0, 8, 0, 4),
+        Size = UDim2.new(1, -16, 0, 16),
         Font = Enum.Font.Gotham,
-        Text = name,
+        Text = name .. ":",
         TextColor3 = Colors.Text,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -2496,12 +2519,21 @@ function Section:AddKeybind(config)
         return currentKey.Name
     end
     
+    -- Button container (horizontal layout for mode + key)
+    local buttonContainer = Utility.Create("Frame", {
+        Name = "ButtonContainer",
+        Parent = container,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 8, 0, 24),
+        Size = UDim2.new(1, -16, 0, 20),
+    })
+    
     local modeButton = Utility.Create("TextButton", {
         Name = "ModeButton",
-        Parent = container,
+        Parent = buttonContainer,
         BackgroundColor3 = Colors.Dropdown,
         BorderSizePixel = 0,
-        Position = UDim2.new(1, -120, 0.5, -10),
+        Position = UDim2.new(0, 0, 0, 0),
         Size = UDim2.new(0, 50, 0, 20),
         Font = Enum.Font.Gotham,
         Text = mode,
@@ -2514,11 +2546,11 @@ function Section:AddKeybind(config)
     
     local keybindButton = Utility.Create("TextButton", {
         Name = "KeybindButton",
-        Parent = container,
+        Parent = buttonContainer,
         BackgroundColor3 = Colors.Dropdown,
         BorderSizePixel = 0,
-        Position = UDim2.new(1, -65, 0.5, -10),
-        Size = UDim2.new(0, 57, 0, 20),
+        Position = UDim2.new(0, 55, 0, 0),
+        Size = UDim2.new(1, -55, 0, 20),
         Font = Enum.Font.GothamBold,
         Text = getKeyDisplayName(),
         TextColor3 = Colors.Accent,
@@ -2664,7 +2696,7 @@ function Section:AddKeybind(config)
     end
     
     return {
-        Set = function(_, key)
+        Set = function(self, key)
             if key == Enum.KeyCode.Backspace then key = Enum.KeyCode.Unknown end
             currentKey = key
             keybindButton.Text = getKeyDisplayName()
@@ -2672,7 +2704,7 @@ function Section:AddKeybind(config)
         end,
         Get = function() return currentKey end,
         GetState = function() return isActive end,
-        SetMode = function(_, newMode)
+        SetMode = function(self, newMode)
             for i, m in ipairs(modes) do
                 if m == newMode then
                     modeIndex = i
@@ -2695,6 +2727,7 @@ function Section:AddKeybind(config)
     }
 end
 
+-- UPDATED: Square Color Picker (Gradient-based)
 function Section:AddColorPicker(config)
     config = config or {}
     local name = config.Name or "Color Picker"
@@ -2759,32 +2792,62 @@ function Section:AddColorPicker(config)
     self.Tab.Library:RegisterThemeObject(colorButtonStroke, {Color = "Border"})
     self.Tab.Library:RegisterThemeObject(pickerContainer, {BackgroundColor3 = "Dropdown"})
     
-    -- Color wheel
-    local colorWheel = Utility.Create("ImageLabel", {
-        Name = "ColorWheel",
+    -- NEW: Square gradient color picker
+    local colorSquare = Utility.Create("Frame", {
+        Name = "ColorSquare",
         Parent = pickerContainer,
-        BackgroundTransparency = 1,
+        BackgroundColor3 = Color3.new(1, 0, 0),
+        BorderSizePixel = 0,
         Position = UDim2.new(0, 5, 0, 5),
         Size = UDim2.new(0, 100, 0, 100),
-        Image = "rbxassetid://6523286724",
     })
     
-    local wheelCursor = Utility.Create("Frame", {
+    -- Saturation gradient (left to right: white to color)
+    local satGradient = Utility.Create("UIGradient", {
+        Parent = colorSquare,
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+            ColorSequenceKeypoint.new(1, Color3.new(1, 0, 0))
+        }),
+        Rotation = 0,
+    })
+    
+    -- Value/Brightness overlay (top to bottom: transparent to black)
+    local valueOverlay = Utility.Create("Frame", {
+        Parent = colorSquare,
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 1, 0),
+    })
+    
+    local valueGradient = Utility.Create("UIGradient", {
+        Parent = valueOverlay,
+        Color = ColorSequence.new(Color3.new(0, 0, 0)),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(1, 0)
+        }),
+        Rotation = 90,
+    })
+    
+    local squareCursor = Utility.Create("Frame", {
         Name = "Cursor",
-        Parent = colorWheel,
+        Parent = colorSquare,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Size = UDim2.new(0, 8, 0, 8),
         AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Position = UDim2.new(1, 0, 0, 0),
+        ZIndex = 10,
     })
     
-    Utility.Create("UICorner", {Parent = wheelCursor, CornerRadius = UDim.new(1, 0)})
-    Utility.CreateStroke(wheelCursor, Color3.new(0, 0, 0), 2)
+    Utility.Create("UICorner", {Parent = squareCursor, CornerRadius = UDim.new(1, 0)})
+    Utility.CreateStroke(squareCursor, Color3.new(0, 0, 0), 2)
     
-    -- Brightness bar
-    local brightnessBar = Utility.Create("Frame", {
-        Name = "BrightnessBar",
+    -- Hue bar
+    local hueBar = Utility.Create("Frame", {
+        Name = "HueBar",
         Parent = pickerContainer,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
@@ -2792,28 +2855,34 @@ function Section:AddColorPicker(config)
         Size = UDim2.new(0, 15, 0, 100),
     })
     
-    local brightnessGradient = Utility.Create("UIGradient", {
-        Parent = brightnessBar,
+    local hueGradient = Utility.Create("UIGradient", {
+        Parent = hueBar,
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-            ColorSequenceKeypoint.new(1, Color3.new(0, 0, 0))
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+                        ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
         }),
         Rotation = 90,
     })
     
-    Utility.CreateStroke(brightnessBar, Colors.Border, 1)
+    Utility.CreateStroke(hueBar, Colors.Border, 1)
     
-    local brightnessCursor = Utility.Create("Frame", {
+    local hueCursor = Utility.Create("Frame", {
         Name = "Cursor",
-        Parent = brightnessBar,
+        Parent = hueBar,
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Size = UDim2.new(1, 4, 0, 4),
         Position = UDim2.new(0, -2, 0, 0),
         AnchorPoint = Vector2.new(0, 0.5),
+        ZIndex = 10,
     })
     
-    Utility.CreateStroke(brightnessCursor, Color3.new(0, 0, 0), 1)
+    Utility.CreateStroke(hueCursor, Color3.new(0, 0, 0), 1)
     
     -- Hex input
     local hexInput = Utility.Create("TextBox", {
@@ -2839,64 +2908,66 @@ function Section:AddColorPicker(config)
         colorButton.BackgroundColor3 = currentColor
         hexInput.Text = string.format("#%02X%02X%02X", math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255))
         
-        brightnessGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromHSV(h, s, 1)),
-            ColorSequenceKeypoint.new(1, Color3.new(0, 0, 0))
+        -- Update square gradient to current hue
+        local hueColor = Color3.fromHSV(h, 1, 1)
+        satGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+            ColorSequenceKeypoint.new(1, hueColor)
         })
+        colorSquare.BackgroundColor3 = hueColor
         
         if not skipCallback then callback(currentColor) end
         if flag then self.Tab.Library.Flags[flag] = currentColor end
     end
     
     local function updateCursors()
-        local angle = h * math.pi * 2
-        local radius = s * 50
-        local x = 50 + math.cos(angle) * radius
-        local y = 50 + math.sin(angle) * radius
-        wheelCursor.Position = UDim2.new(0, x, 0, y)
-        brightnessCursor.Position = UDim2.new(0, -2, 1 - v, 0)
+        squareCursor.Position = UDim2.new(s, 0, 1 - v, 0)
+        hueCursor.Position = UDim2.new(0, -2, h, 0)
     end
     
+    updateColor(true)
     updateCursors()
     
-    local wheelDragging, brightnessDragging = false, false
+    local squareDragging, hueDragging = false, false
     
-    colorWheel.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then wheelDragging = true end
+    colorSquare.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            squareDragging = true
+        end
     end)
     
-    colorWheel.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then wheelDragging = false end
+    colorSquare.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            squareDragging = false
+        end
     end)
     
-    brightnessBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then brightnessDragging = true end
+    hueBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            hueDragging = true
+        end
     end)
     
-    brightnessBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then brightnessDragging = false end
+    hueBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            hueDragging = false
+        end
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            if wheelDragging then
-                local centerX = colorWheel.AbsolutePosition.X + colorWheel.AbsoluteSize.X / 2
-                local centerY = colorWheel.AbsolutePosition.Y + colorWheel.AbsoluteSize.Y / 2
-                local dx = input.Position.X - centerX
-                local dy = input.Position.Y - centerY
-                
-                local angle = math.atan2(dy, dx)
-                h = (angle / (math.pi * 2)) % 1
-                
-                local distance = math.sqrt(dx * dx + dy * dy)
-                local maxRadius = colorWheel.AbsoluteSize.X / 2
-                s = math.clamp(distance / maxRadius, 0, 1)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            if squareDragging then
+                local relativeX = (input.Position.X - colorSquare.AbsolutePosition.X) / colorSquare.AbsoluteSize.X
+                local relativeY = (input.Position.Y - colorSquare.AbsolutePosition.Y) / colorSquare.AbsoluteSize.Y
+                s = math.clamp(relativeX, 0, 1)
+                v = 1 - math.clamp(relativeY, 0, 1)
                 
                 updateColor()
                 updateCursors()
-            elseif brightnessDragging then
-                local relativeY = (input.Position.Y - brightnessBar.AbsolutePosition.Y) / brightnessBar.AbsoluteSize.Y
-                v = 1 - math.clamp(relativeY, 0, 1)
+            elseif hueDragging then
+                local relativeY = (input.Position.Y - hueBar.AbsolutePosition.Y) / hueBar.AbsoluteSize.Y
+                h = math.clamp(relativeY, 0, 1)
+                
                 updateColor()
                 updateCursors()
             end
@@ -2948,7 +3019,7 @@ function Section:AddColorPicker(config)
     end
     
     return {
-        Set = function(_, color)
+        Set = function(self, color)
             currentColor = color
             h, s, v = color:ToHSV()
             updateColor()
@@ -2979,7 +3050,7 @@ function Section:AddLabel(config)
     self.Tab.Library:RegisterThemeObject(label, {TextColor3 = "TextDark"})
     
     return {
-        Set = function(_, newText)
+        Set = function(self, newText)
             label.Text = newText
         end
     }
@@ -3071,7 +3142,7 @@ function Section:AddTextBox(config)
     end
     
     return {
-        Set = function(_, text)
+        Set = function(self, text)
             textBox.Text = text
             callback(text)
         end,

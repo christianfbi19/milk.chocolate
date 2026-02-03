@@ -1,14 +1,14 @@
 --[[
-    milk.chocolate UI Library v2.4.0
+    milk.chocolate UI Library v2.4.1
     A Linoria-style UI with multiple themes
     
-    New in v2.4.0:
-    - Keybind layout redesigned to save space (vertical layout)
-    - Mobile drag support added
-    - Color picker changed to square gradient
-    - Config folder fixed to "milk" (removed .cfg extension)
-    - Import Config button added
-    - All previous fixes maintained
+    Changes in v2.4.1:
+    - Keybind picker combined with toggle button
+    - Removed import/export config (clipboard not supported in Roblox)
+    - Removed all emojis
+    - Fixed color square visibility (added white border on left)
+    - Fixed config loading to properly activate UI elements
+    - Removed hex input from color picker
 ]]
 
 local MilkChocolate = {}
@@ -24,7 +24,7 @@ local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
 
--- Config folder (FIXED: Now just "milk")
+-- Config folder
 local ConfigFolder = "milk"
 
 -- Theme Definitions
@@ -309,7 +309,7 @@ function Utility.CleanNumber(value, increment)
     end
 end
 
--- UPDATED: Mobile + Desktop Drag Support
+-- Mobile + Desktop Drag Support
 function Utility.MakeDraggable(dragElement, targetElement)
     local dragging = false
     local dragStart, startPos
@@ -338,7 +338,6 @@ function Utility.MakeDraggable(dragElement, targetElement)
         end
     end
     
-    -- Mouse support
     dragElement.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             startDrag(input)
@@ -351,7 +350,6 @@ function Utility.MakeDraggable(dragElement, targetElement)
         end
     end)
     
-    -- Touch/Mouse movement
     UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             updateDrag(input)
@@ -533,7 +531,7 @@ function MilkChocolate.CreateKeySystem(config)
         Position = UDim2.new(0, 0, 0, 50),
         Size = UDim2.new(1, 0, 0, 40),
         Font = Enum.Font.GothamBold,
-        Text = "🔒",
+        Text = "[LOCKED]",
         TextColor3 = Colors.Accent,
         TextSize = 32,
     })
@@ -621,7 +619,7 @@ function MilkChocolate.CreateKeySystem(config)
         
         if keyInput.Text == requiredKey then
             statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-            statusLabel.Text = "✓ Key verified! Loading..."
+            statusLabel.Text = "Key verified! Loading..."
             
             Utility.SaveData("milk_chocolate_keydata.json", {key = requiredKey, verified = true})
             
@@ -630,7 +628,7 @@ function MilkChocolate.CreateKeySystem(config)
             keyGui:Destroy()
         else
             statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            statusLabel.Text = "✗ Invalid key!"
+            statusLabel.Text = "Invalid key!"
             
             Utility.Tween(mainFrame, {Position = UDim2.new(0.5, -180, 0.5, -120)}, 0.05)
             task.wait(0.05)
@@ -1370,6 +1368,7 @@ function MilkChocolate:SaveConfig(name)
     return success
 end
 
+-- FIXED: Load Config now properly activates UI elements
 function MilkChocolate:LoadConfig(name)
     name = name or self.ConfigName
     local path = ConfigFolder .. "/" .. name .. ".json"
@@ -1402,6 +1401,13 @@ function MilkChocolate:LoadConfig(name)
             if self.FlagCallbacks[flag] then
                 pcall(self.FlagCallbacks[flag], value)
             end
+            
+            -- FIXED: Apply visibility changes immediately
+            if flag == "ShowWatermark" and self.Watermark then
+                self.Watermark.Visible = value
+            elseif flag == "ShowKeybinds" and self.KeybindWidget then
+                self.KeybindWidget.Visible = value
+            end
         end
     end
     
@@ -1428,69 +1434,6 @@ function MilkChocolate:GetConfigs()
         if name then table.insert(configs, name) end
     end
     return configs
-end
-
-function MilkChocolate:ExportConfig()
-    local configData = {theme = self.CurrentTheme, flags = {}}
-    
-    for flag, value in pairs(self.Flags) do
-        if typeof(value) == "Color3" then
-            configData.flags[flag] = {type = "Color3", value = Utility.ColorToTable(value)}
-        elseif typeof(value) == "EnumItem" then
-            configData.flags[flag] = {type = "EnumItem", value = tostring(value)}
-        elseif type(value) == "table" then
-            configData.flags[flag] = {type = "table", value = value}
-        else
-            configData.flags[flag] = {type = type(value), value = value}
-        end
-    end
-    
-    local encoded = HttpService:JSONEncode(configData)
-    if setclipboard then
-        setclipboard(encoded)
-        self:Notify({Title = "Exported", Content = "Config copied to clipboard!", Type = "Success", Duration = 2})
-    end
-    return encoded
-end
-
--- NEW: Import Config Function
-function MilkChocolate:ImportConfig(data)
-    local success, configData = pcall(function()
-        return HttpService:JSONDecode(data)
-    end)
-    
-    if not success or not configData then
-        self:Notify({Title = "Error", Content = "Invalid config data!", Type = "Error", Duration = 2})
-        return false
-    end
-    
-    if configData.theme then self:SetTheme(configData.theme) end
-    
-    for flag, flagData in pairs(configData.flags) do
-        local value
-        if flagData.type == "Color3" then
-            value = Utility.TableToColor(flagData.value)
-        elseif flagData.type == "EnumItem" then
-            local enumType, enumValue = flagData.value:match("Enum%.(%w+)%.(%w+)")
-            if enumType and enumValue then
-                pcall(function() value = Enum[enumType][enumValue] end)
-            end
-        elseif flagData.type == "table" then
-            value = flagData.value
-        else
-            value = flagData.value
-        end
-        
-        if value ~= nil then
-            self.Flags[flag] = value
-            if self.FlagCallbacks[flag] then
-                pcall(self.FlagCallbacks[flag], value)
-            end
-        end
-    end
-    
-    self:Notify({Title = "Imported", Content = "Config imported!", Type = "Success", Duration = 2})
-    return true
 end
 
 -- Tab Class
@@ -1816,7 +1759,7 @@ function Section:AddToggle(config)
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 1, 0),
         Font = Enum.Font.GothamBold,
-        Text = toggled and "✓" or "",
+        Text = toggled and "+" or "",
         TextColor3 = Colors.PastelCream,
         TextSize = 12,
     })
@@ -1836,7 +1779,7 @@ function Section:AddToggle(config)
     
     local function updateToggle(skipCallback)
         toggleBox.BackgroundColor3 = toggled and Colors.Toggle or Colors.ToggleOff
-        checkmark.Text = toggled and "✓" or ""
+        checkmark.Text = toggled and "+" or ""
         
         if not skipCallback then
             callback(toggled)
@@ -2098,7 +2041,7 @@ function Section:AddDropdown(config)
         Position = UDim2.new(1, -20, 0, 0),
         Size = UDim2.new(0, 20, 1, 0),
         Font = Enum.Font.GothamBold,
-        Text = "▼",
+        Text = "v",
         TextColor3 = Colors.TextDark,
         TextSize = 8,
     })
@@ -2314,7 +2257,7 @@ function Section:AddMultiDropdown(config)
         Position = UDim2.new(1, -20, 0, 0),
         Size = UDim2.new(0, 20, 1, 0),
         Font = Enum.Font.GothamBold,
-        Text = "▼",
+        Text = "v",
         TextColor3 = Colors.TextDark,
         TextSize = 8,
     })
@@ -2381,7 +2324,7 @@ function Section:AddMultiDropdown(config)
             BackgroundTransparency = 1,
             Size = UDim2.new(1, 0, 1, 0),
             Font = Enum.Font.GothamBold,
-            Text = selected[option] and "✓" or "",
+            Text = selected[option] and "+" or "",
             TextColor3 = Colors.PastelCream,
             TextSize = 10,
         })
@@ -2412,7 +2355,7 @@ function Section:AddMultiDropdown(config)
         optionButton.MouseButton1Click:Connect(function()
             selected[option] = not selected[option]
             checkbox.BackgroundColor3 = selected[option] and Colors.Toggle or Colors.ToggleOff
-            checkmark.Text = selected[option] and "✓" or ""
+            checkmark.Text = selected[option] and "+" or ""
             updateButton()
         end)
     end
@@ -2474,7 +2417,7 @@ function Section:AddMultiDropdown(config)
     }
 end
 
--- UPDATED: Compact Keybind Layout (Vertical)
+-- NEW: Combined Keybind + Toggle Button
 function Section:AddKeybind(config)
     config = config or {}
     local name = config.Name or "Keybind"
@@ -2487,14 +2430,14 @@ function Section:AddKeybind(config)
     local currentKey = default
     local listening = false
     local isActive = mode == "Always"
+    local enabled = false  -- Toggle state
     
-    -- NEW: Compact vertical layout
     local container = Utility.Create("Frame", {
         Name = name,
         Parent = self.Content,
         BackgroundColor3 = Colors.BackgroundLight,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 50),  -- Increased height for vertical layout
+        Size = UDim2.new(1, 0, 0, 28),
     })
     
     local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
@@ -2502,10 +2445,10 @@ function Section:AddKeybind(config)
     local label = Utility.Create("TextLabel", {
         Parent = container,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0, 4),
-        Size = UDim2.new(1, -16, 0, 16),
+        Position = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(1, -75, 1, 0),
         Font = Enum.Font.Gotham,
-        Text = name .. ":",
+        Text = name,
         TextColor3 = Colors.Text,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -2519,52 +2462,59 @@ function Section:AddKeybind(config)
         return currentKey.Name
     end
     
-    -- Button container (horizontal layout for mode + key)
-    local buttonContainer = Utility.Create("Frame", {
-        Name = "ButtonContainer",
+    -- Toggle box
+    local toggleBox = Utility.Create("Frame", {
+        Name = "ToggleBox",
         Parent = container,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0, 24),
-        Size = UDim2.new(1, -16, 0, 20),
-    })
-    
-    local modeButton = Utility.Create("TextButton", {
-        Name = "ModeButton",
-        Parent = buttonContainer,
-        BackgroundColor3 = Colors.Dropdown,
+        BackgroundColor3 = enabled and Colors.Toggle or Colors.ToggleOff,
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(0, 50, 0, 20),
-        Font = Enum.Font.Gotham,
-        Text = mode,
-        TextColor3 = Colors.TextDark,
-        TextSize = 9,
-        AutoButtonColor = false,
+        Position = UDim2.new(1, -67, 0.5, -8),
+        Size = UDim2.new(0, 18, 0, 16),
     })
     
-    local modeStroke = Utility.CreateStroke(modeButton, Colors.Border, 1)
+    local toggleStroke = Utility.CreateStroke(toggleBox, Colors.Border, 1)
     
+    local checkmark = Utility.Create("TextLabel", {
+        Parent = toggleBox,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Font = Enum.Font.GothamBold,
+        Text = enabled and "+" or "",
+        TextColor3 = Colors.PastelCream,
+        TextSize = 12,
+    })
+    
+    -- Keybind button
     local keybindButton = Utility.Create("TextButton", {
         Name = "KeybindButton",
-        Parent = buttonContainer,
+        Parent = container,
         BackgroundColor3 = Colors.Dropdown,
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 55, 0, 0),
-        Size = UDim2.new(1, -55, 0, 20),
+        Position = UDim2.new(1, -43, 0.5, -10),
+        Size = UDim2.new(0, 35, 0, 20),
         Font = Enum.Font.GothamBold,
         Text = getKeyDisplayName(),
         TextColor3 = Colors.Accent,
-        TextSize = 10,
+        TextSize = 9,
         AutoButtonColor = false,
     })
     
     local keybindStroke = Utility.CreateStroke(keybindButton, Colors.Border, 1)
     
+    -- Invisible button over toggle
+    local toggleButton = Utility.Create("TextButton", {
+        Parent = container,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, -67, 0, 0),
+        Size = UDim2.new(0, 18, 1, 0),
+        Text = "",
+    })
+    
     self.Tab.Library:RegisterThemeObject(container, {BackgroundColor3 = "BackgroundLight"})
     self.Tab.Library:RegisterThemeObject(containerStroke, {Color = "Border"})
     self.Tab.Library:RegisterThemeObject(label, {TextColor3 = "Text"})
-    self.Tab.Library:RegisterThemeObject(modeButton, {BackgroundColor3 = "Dropdown", TextColor3 = "TextDark"})
-    self.Tab.Library:RegisterThemeObject(modeStroke, {Color = "Border"})
+    self.Tab.Library:RegisterThemeObject(toggleStroke, {Color = "Border"})
+    self.Tab.Library:RegisterThemeObject(checkmark, {TextColor3 = "PastelCream"})
     self.Tab.Library:RegisterThemeObject(keybindButton, {BackgroundColor3 = "Dropdown", TextColor3 = "Accent"})
     self.Tab.Library:RegisterThemeObject(keybindStroke, {Color = "Border"})
     
@@ -2586,7 +2536,7 @@ function Section:AddKeybind(config)
         if mode == "Always" then
             isActive = true
             self.Tab.Library:SetKeybindState(name, true)
-            callback(true)
+            if enabled then callback(true) end
         end
     end
     
@@ -2595,35 +2545,20 @@ function Section:AddKeybind(config)
         if mode == "Always" then self.Tab.Library:SetKeybindState(name, true) end
     end
     
-    local modes = {"Hold", "Toggle", "Always"}
-    local modeIndex = 1
-    for i, m in ipairs(modes) do
-        if m == mode then modeIndex = i break end
-    end
-    
-    modeButton.MouseButton1Click:Connect(function()
-        modeIndex = modeIndex % 3 + 1
-        mode = modes[modeIndex]
-        modeButton.Text = mode
+    toggleButton.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        toggleBox.BackgroundColor3 = enabled and Colors.Toggle or Colors.ToggleOff
+        checkmark.Text = enabled and "+" or ""
         
-        if mode == "Always" then
+        if not enabled then
+            isActive = false
+            self.Tab.Library:SetKeybindState(name, false)
+            callback(false)
+        elseif mode == "Always" then
             isActive = true
             self.Tab.Library:SetKeybindState(name, true)
             callback(true)
-        else
-            isActive = false
-            self.Tab.Library:SetKeybindState(name, false)
         end
-        
-        updateWidget()
-    end)
-    
-    modeButton.MouseEnter:Connect(function()
-        Utility.Tween(modeStroke, {Color = Colors.Accent}, 0.15)
-    end)
-    
-    modeButton.MouseLeave:Connect(function()
-        Utility.Tween(modeStroke, {Color = Colors.Border}, 0.15)
     end)
     
     keybindButton.MouseButton1Click:Connect(function()
@@ -2665,7 +2600,7 @@ function Section:AddKeybind(config)
                 
                 if flag then self.Tab.Library.Flags[flag] = currentKey end
             end
-        elseif not gameProcessed and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
+        elseif not gameProcessed and enabled and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
             if mode == "Toggle" then
                 isActive = not isActive
                 self.Tab.Library:SetKeybindState(name, isActive)
@@ -2679,7 +2614,7 @@ function Section:AddKeybind(config)
     end)
     
     UserInputService.InputEnded:Connect(function(input)
-        if not listening and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
+        if not listening and enabled and currentKey ~= Enum.KeyCode.Unknown and input.KeyCode == currentKey then
             if mode == "Hold" then
                 isActive = false
                 self.Tab.Library:SetKeybindState(name, false)
@@ -2690,7 +2625,7 @@ function Section:AddKeybind(config)
     
     if flag then self.Tab.Library.Flags[flag] = currentKey end
     
-    if mode == "Always" then
+    if mode == "Always" and enabled then
         isActive = true
         callback(true)
     end
@@ -2704,30 +2639,16 @@ function Section:AddKeybind(config)
         end,
         Get = function() return currentKey end,
         GetState = function() return isActive end,
-        SetMode = function(self, newMode)
-            for i, m in ipairs(modes) do
-                if m == newMode then
-                    modeIndex = i
-                    mode = newMode
-                    modeButton.Text = mode
-                    if mode == "Always" then
-                        isActive = true
-                        self.Tab.Library:SetKeybindState(name, true)
-                        callback(true)
-                    else
-                        isActive = false
-                        self.Tab.Library:SetKeybindState(name, false)
-                    end
-                    updateWidget()
-                    break
-                end
-            end
+        SetEnabled = function(self, state)
+            enabled = state
+            toggleBox.BackgroundColor3 = enabled and Colors.Toggle or Colors.ToggleOff
+            checkmark.Text = enabled and "+" or ""
         end,
-        GetMode = function() return mode end
+        GetEnabled = function() return enabled end
     }
 end
 
--- UPDATED: Square Color Picker (Gradient-based)
+-- FIXED: Square Color Picker with Visible White Side
 function Section:AddColorPicker(config)
     config = config or {}
     local name = config.Name or "Color Picker"
@@ -2792,7 +2713,7 @@ function Section:AddColorPicker(config)
     self.Tab.Library:RegisterThemeObject(colorButtonStroke, {Color = "Border"})
     self.Tab.Library:RegisterThemeObject(pickerContainer, {BackgroundColor3 = "Dropdown"})
     
-    -- NEW: Square gradient color picker
+    -- FIXED: Color square with visible white border
     local colorSquare = Utility.Create("Frame", {
         Name = "ColorSquare",
         Parent = pickerContainer,
@@ -2802,7 +2723,17 @@ function Section:AddColorPicker(config)
         Size = UDim2.new(0, 100, 0, 100),
     })
     
-    -- Saturation gradient (left to right: white to color)
+    -- White border on left side to make white visible
+    Utility.Create("Frame", {
+        Name = "WhiteBorder",
+        Parent = colorSquare,
+        BackgroundColor3 = Color3.fromRGB(200, 200, 200),
+        BorderSizePixel = 0,
+        Size = UDim2.new(0, 1, 1, 0),
+        ZIndex = 5,
+    })
+    
+    -- Saturation gradient
     local satGradient = Utility.Create("UIGradient", {
         Parent = colorSquare,
         Color = ColorSequence.new({
@@ -2812,13 +2743,14 @@ function Section:AddColorPicker(config)
         Rotation = 0,
     })
     
-    -- Value/Brightness overlay (top to bottom: transparent to black)
+    -- Value/Brightness overlay
     local valueOverlay = Utility.Create("Frame", {
         Parent = colorSquare,
         BackgroundColor3 = Color3.new(0, 0, 0),
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
         Size = UDim2.new(1, 0, 1, 0),
+        ZIndex = 2,
     })
     
     local valueGradient = Utility.Create("UIGradient", {
@@ -2852,7 +2784,7 @@ function Section:AddColorPicker(config)
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Position = UDim2.new(0, 110, 0, 5),
-        Size = UDim2.new(0, 15, 0, 100),
+        Size = UDim2.new(1, -115, 0, 100),
     })
     
     local hueGradient = Utility.Create("UIGradient", {
@@ -2860,7 +2792,7 @@ function Section:AddColorPicker(config)
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
             ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
-                        ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
             ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
             ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
             ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
@@ -2884,34 +2816,16 @@ function Section:AddColorPicker(config)
     
     Utility.CreateStroke(hueCursor, Color3.new(0, 0, 0), 1)
     
-    -- Hex input
-    local hexInput = Utility.Create("TextBox", {
-        Name = "HexInput",
-        Parent = pickerContainer,
-        BackgroundColor3 = Colors.BackgroundLight,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 130, 0, 40),
-        Size = UDim2.new(1, -140, 0, 22),
-        Font = Enum.Font.GothamBold,
-        Text = string.format("#%02X%02X%02X", math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255)),
-        TextColor3 = Colors.Text,
-        TextSize = 11,
-        ClearTextOnFocus = true,
-    })
-    
-    Utility.CreateStroke(hexInput, Colors.Border, 1)
-    
     local h, s, v = currentColor:ToHSV()
     
     local function updateColor(skipCallback)
         currentColor = Color3.fromHSV(h, s, v)
         colorButton.BackgroundColor3 = currentColor
-        hexInput.Text = string.format("#%02X%02X%02X", math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255))
         
         -- Update square gradient to current hue
         local hueColor = Color3.fromHSV(h, 1, 1)
         satGradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+                        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
             ColorSequenceKeypoint.new(1, hueColor)
         })
         colorSquare.BackgroundColor3 = hueColor
@@ -2968,21 +2882,6 @@ function Section:AddColorPicker(config)
                 local relativeY = (input.Position.Y - hueBar.AbsolutePosition.Y) / hueBar.AbsoluteSize.Y
                 h = math.clamp(relativeY, 0, 1)
                 
-                updateColor()
-                updateCursors()
-            end
-        end
-    end)
-    
-    hexInput.FocusLost:Connect(function()
-        local hex = hexInput.Text:gsub("#", "")
-        if #hex == 6 then
-            local r = tonumber(hex:sub(1, 2), 16)
-            local g = tonumber(hex:sub(3, 4), 16)
-            local b = tonumber(hex:sub(5, 6), 16)
-            if r and g and b then
-                currentColor = Color3.fromRGB(r, g, b)
-                h, s, v = currentColor:ToHSV()
                 updateColor()
                 updateCursors()
             end

@@ -1737,7 +1737,7 @@ function Section:AddToggle(config)
     local checkmark = Utility.Create("TextLabel", {
         Parent = toggleBox,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0        Size = UDim2.new(1, 0, 1, 0),
+        Size = UDim2.new(1, 0, 1, 0),
         Font = Enum.Font.GothamBold,
         Text = toggled and "+" or "",
         TextColor3 = Colors.PastelCream,

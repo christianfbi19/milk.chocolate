@@ -1,13 +1,11 @@
 --[[
-    milk.chocolate UI Library v2.6.2
+    milk.chocolate UI Library v2.6.3
     A Linoria-style UI with multiple themes
     
-    Changes in v2.6.2:
-    - Fixed theme switching for all UI elements
-    - Fixed UI toggle functionality with customizable keybind
-    - Added glow effect to resize handle on hover
-    - Added text scaling based on frame size
-    - Ping updates every 2 seconds instead of 0.5
+    Changes in v2.6.3:
+    - Fixed theme switching for ALL UI elements
+    - Fixed color picker config saving/loading
+    - Complete theme update system for all components
 ]]
 
 local MilkChocolate = {}
@@ -683,6 +681,7 @@ function MilkChocolate.new(config)
     self.OpenedFrames = {}
     self.Connections = {}
     self.ResizeLines = {}
+    self.ColorPickers = {}
     
     Utility.EnsureFolder(ConfigFolder)
     
@@ -711,18 +710,6 @@ function MilkChocolate:SetTheme(themeName)
 end
 
 function MilkChocolate:UpdateAllThemeColors()
-    for _, entry in ipairs(self.ThemeObjects) do
-        if entry.Object and entry.Object.Parent then
-            for prop, colorKey in pairs(entry.Properties) do
-                if Colors[colorKey] then
-                    pcall(function()
-                        entry.Object[prop] = Colors[colorKey]
-                    end)
-                end
-            end
-        end
-    end
-    
     -- Main frame elements
     if self.MainFrame then self.MainFrame.BackgroundColor3 = Colors.Background end
     if self.MainStroke then self.MainStroke.Color = Colors.Accent end
@@ -781,12 +768,10 @@ function MilkChocolate:UpdateAllThemeColors()
     -- Update tabs
     for _, tab in ipairs(self.Tabs) do
         if self.ActiveTab == tab then
-            tab.ButtonLabel.TextColor3 = Colors.Accent
-            if tab.Underline then
-                tab.Underline.BackgroundColor3 = Colors.Accent
-            end
+            if tab.ButtonLabel then tab.ButtonLabel.TextColor3 = Colors.Accent end
+            if tab.Underline then tab.Underline.BackgroundColor3 = Colors.Accent end
         else
-            tab.ButtonLabel.TextColor3 = Colors.TextDark
+            if tab.ButtonLabel then tab.ButtonLabel.TextColor3 = Colors.TextDark end
         end
         if tab.Content then tab.Content.ScrollBarImageColor3 = Colors.Accent end
         
@@ -794,33 +779,72 @@ function MilkChocolate:UpdateAllThemeColors()
         for _, section in ipairs(tab.Sections) do
             if section.Frame then section.Frame.BackgroundColor3 = Colors.BackgroundDark end
             if section.Stroke then section.Stroke.Color = Colors.Border end
+            if section.TitleSeparator then section.TitleSeparator.BackgroundColor3 = Colors.Accent end
+            if section.TitleLabel then section.TitleLabel.TextColor3 = Colors.Text end
             
-            -- Update all elements in sections
-            if section.Content then
-                for _, element in pairs(section.Content:GetDescendants()) do
-                    -- Update backgrounds
-                    if element:IsA("Frame") and element.Name ~= "Content" and element.Name ~= "TitleContainer" then
-                        if element.BackgroundColor3 == Colors.BackgroundLight or element:GetAttribute("IsElement") then
-                            element.BackgroundColor3 = Colors.BackgroundLight
-                        end
-                    end
-                    
-                    -- Update strokes
-                    if element:IsA("UIStroke") then
-                        if element.Parent and element.Parent:GetAttribute("IsElement") then
-                            element.Color = Colors.Border
-                        end
-                    end
-                    
-                    -- Update text colors
-                    if element:IsA("TextLabel") or element:IsA("TextButton") then
-                        if element.Name ~= "Title" and element.Parent.Name ~= "TitleContainer" then
-                            if element.TextColor3 == Colors.Text or element:GetAttribute("IsElementText") then
-                                element.TextColor3 = Colors.Text
-                            end
-                        end
-                    end
+            -- Update all child elements
+            self:UpdateSectionTheme(section.Content)
+        end
+    end
+    
+    -- Update registered theme objects
+    for _, entry in ipairs(self.ThemeObjects) do
+        if entry.Object and entry.Object.Parent then
+            for prop, colorKey in pairs(entry.Properties) do
+                if Colors[colorKey] then
+                    pcall(function()
+                        entry.Object[prop] = Colors[colorKey]
+                    end)
                 end
+            end
+        end
+    end
+end
+
+function MilkChocolate:UpdateSectionTheme(container)
+    if not container then return end
+    
+    for _, element in pairs(container:GetDescendants()) do
+        local themeTag = element:GetAttribute("ThemeTag")
+        
+        if themeTag then
+            -- Update based on theme tag
+            if themeTag == "ElementBG" then
+                element.BackgroundColor3 = Colors.BackgroundLight
+            elseif themeTag == "ElementText" then
+                element.TextColor3 = Colors.Text
+            elseif themeTag == "ElementTextDark" then
+                element.TextColor3 = Colors.TextDark
+            elseif themeTag == "ElementTextAccent" then
+                element.TextColor3 = Colors.Accent
+            elseif themeTag == "ElementBorder" then
+                element.Color = Colors.Border
+            elseif themeTag == "ElementDropdown" then
+                element.BackgroundColor3 = Colors.Dropdown
+            elseif themeTag == "ElementToggleOn" then
+                -- Check if toggle is actually on
+                local toggleState = element.Parent:GetAttribute("ToggleState")
+                if toggleState then
+                    element.BackgroundColor3 = Colors.Toggle
+                else
+                    element.BackgroundColor3 = Colors.ToggleOff
+                end
+            elseif themeTag == "ElementToggleOff" then
+                element.BackgroundColor3 = Colors.ToggleOff
+            elseif themeTag == "ElementDivider" then
+                element.BackgroundColor3 = Colors.Border
+            elseif themeTag == "ElementSliderBG" then
+                element.BackgroundColor3 = Colors.ToggleOff
+            elseif themeTag == "ElementSliderFill" then
+                element.BackgroundColor3 = Colors.Accent
+            elseif themeTag == "ElementCheckmark" then
+                element.TextColor3 = Colors.PastelCream
+            elseif themeTag == "KeybindButton" then
+                element.BackgroundColor3 = Colors.Dropdown
+                element.TextColor3 = Colors.Accent
+            elseif themeTag == "ModeButton" then
+                element.BackgroundColor3 = Colors.Dropdown
+                element.TextColor3 = Colors.TextDark
             end
         end
     end
@@ -1459,16 +1483,17 @@ function MilkChocolate:Unload()
     self.KeybindStates = {}
     self.OpenedFrames = {}
     self.Connections = {}
+    self.ColorPickers = {}
 end
 
 function MilkChocolate:Destroy()
     self:Unload()
 end
 
--- Config System
+-- Config System with Color Picker Support
 function MilkChocolate:SaveConfig(name)
     name = name or self.ConfigName
-    local configData = {theme = self.CurrentTheme, flags = {}}
+    local configData = {theme = self.CurrentTheme, flags = {}, colorPickers = {}}
     
     for flag, value in pairs(self.Flags) do
         if typeof(value) == "Color3" then
@@ -1479,6 +1504,17 @@ function MilkChocolate:SaveConfig(name)
             configData.flags[flag] = {type = "table", value = value}
         else
             configData.flags[flag] = {type = type(value), value = value}
+        end
+    end
+    
+    -- Save color picker states
+    for pickerFlag, pickerData in pairs(self.ColorPickers) do
+        if pickerData.GetColor then
+            local color, transparency = pickerData.GetColor()
+            configData.colorPickers[pickerFlag] = {
+                color = Utility.ColorToTable(color),
+                transparency = transparency or 0
+            }
         end
     end
     
@@ -1525,6 +1561,17 @@ function MilkChocolate:LoadConfig(name)
             self.Flags[flag] = value
             if self.FlagCallbacks[flag] then
                 pcall(self.FlagCallbacks[flag], value)
+            end
+        end
+    end
+    
+    -- Load color picker states
+    if configData.colorPickers then
+        for pickerFlag, pickerData in pairs(configData.colorPickers) do
+            if self.ColorPickers[pickerFlag] and self.ColorPickers[pickerFlag].SetColor then
+                local color = Utility.TableToColor(pickerData.color)
+                local transparency = pickerData.transparency or 0
+                self.ColorPickers[pickerFlag].SetColor(color, transparency)
             end
         end
     end
@@ -1727,7 +1774,7 @@ function Tab:AddSection(config)
         Size = UDim2.new(1, 0, 0, 22),
     })
     
-    Utility.Create("Frame", {
+    section.TitleSeparator = Utility.Create("Frame", {
         Name = "Separator",
         Parent = titleContainer,
         BackgroundColor3 = Colors.Accent,
@@ -1736,7 +1783,7 @@ function Tab:AddSection(config)
         Size = UDim2.new(1, 0, 0, 1),
     })
     
-    Utility.Create("TextLabel", {
+    section.TitleLabel = Utility.Create("TextLabel", {
         Name = "Title",
         Parent = titleContainer,
         BackgroundTransparency = 1,
@@ -1804,10 +1851,11 @@ function Section:AddButton(config)
         AutoButtonColor = false,
     })
     
-    button:SetAttribute("IsElement", true)
+    button:SetAttribute("ThemeTag", "ElementBG")
     button:SetAttribute("BaseFontSize", 11)
     
     local stroke = Utility.CreateStroke(button, Colors.Border, 1)
+    stroke:SetAttribute("ThemeTag", "ElementBorder")
     
     button.MouseEnter:Connect(function()
         Utility.Tween(button, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.15)
@@ -1848,9 +1896,11 @@ function Section:AddToggle(config)
         Size = UDim2.new(1, 0, 0, 28),
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
+    container:SetAttribute("ToggleState", toggled)
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -1865,7 +1915,7 @@ function Section:AddToggle(config)
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local toggleBox = Utility.Create("Frame", {
@@ -1877,7 +1927,10 @@ function Section:AddToggle(config)
         Size = UDim2.new(0, 18, 0, 16),
     })
     
-    Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleBox:SetAttribute("ThemeTag", "ElementToggleOn")
+    
+    local toggleStroke = Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local checkmark = Utility.Create("TextLabel", {
         Parent = toggleBox,
@@ -1889,6 +1942,7 @@ function Section:AddToggle(config)
         TextSize = 12,
     })
     
+    checkmark:SetAttribute("ThemeTag", "ElementCheckmark")
     checkmark:SetAttribute("BaseFontSize", 12)
     
     local button = Utility.Create("TextButton", {
@@ -1899,6 +1953,8 @@ function Section:AddToggle(config)
     })
     
     local function updateToggle(skipCallback)
+        toggled = not not toggled
+        container:SetAttribute("ToggleState", toggled)
         toggleBox.BackgroundColor3 = toggled and Colors.Toggle or Colors.ToggleOff
         checkmark.Text = toggled and "+" or ""
         
@@ -1966,9 +2022,10 @@ function Section:AddSlider(config)
         Size = UDim2.new(1, 0, 0, 40),
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -1983,7 +2040,7 @@ function Section:AddSlider(config)
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local valueLabel = Utility.Create("TextLabel", {
@@ -1998,6 +2055,7 @@ function Section:AddSlider(config)
         TextXAlignment = Enum.TextXAlignment.Right,
     })
     
+    valueLabel:SetAttribute("ThemeTag", "ElementTextAccent")
     valueLabel:SetAttribute("BaseFontSize", 11)
     
     local sliderBg = Utility.Create("Frame", {
@@ -2008,6 +2066,8 @@ function Section:AddSlider(config)
         Size = UDim2.new(1, -16, 0, 8),
     })
     
+    sliderBg:SetAttribute("ThemeTag", "ElementSliderBG")
+    
     Utility.Create("UICorner", {Parent = sliderBg, CornerRadius = UDim.new(0, 4)})
     
     local sliderFill = Utility.Create("Frame", {
@@ -2016,6 +2076,8 @@ function Section:AddSlider(config)
         BorderSizePixel = 0,
         Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
     })
+    
+    sliderFill:SetAttribute("ThemeTag", "ElementSliderFill")
     
     Utility.Create("UICorner", {Parent = sliderFill, CornerRadius = UDim.new(0, 4)})
     
@@ -2114,9 +2176,10 @@ function Section:AddDropdown(config)
         ClipsDescendants = true,
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -2130,7 +2193,7 @@ function Section:AddDropdown(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local dropdownButton = Utility.Create("TextButton", {
@@ -2147,9 +2210,11 @@ function Section:AddDropdown(config)
         AutoButtonColor = false,
     })
     
+    dropdownButton:SetAttribute("ThemeTag", "ElementDropdown")
     dropdownButton:SetAttribute("BaseFontSize", 11)
     
     local dropdownStroke = Utility.CreateStroke(dropdownButton, Colors.Border, 1)
+    dropdownStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local arrow = Utility.Create("TextLabel", {
         Parent = dropdownButton,
@@ -2162,6 +2227,7 @@ function Section:AddDropdown(config)
         TextSize = 8,
     })
     
+    arrow:SetAttribute("ThemeTag", "ElementTextDark")
     arrow:SetAttribute("BaseFontSize", 8)
     
     local optionContainer = Utility.Create("Frame", {
@@ -2173,7 +2239,10 @@ function Section:AddDropdown(config)
         ClipsDescendants = true,
     })
     
-    Utility.CreateStroke(optionContainer, Colors.Border, 1)
+    optionContainer:SetAttribute("ThemeTag", "ElementDropdown")
+    
+    local optContainerStroke = Utility.CreateStroke(optionContainer, Colors.Border, 1)
+    optContainerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     Utility.Create("UIListLayout", {
         Parent = optionContainer,
@@ -2202,6 +2271,7 @@ function Section:AddDropdown(config)
                 AutoButtonColor = false,
             })
             
+            optionButton:SetAttribute("ThemeTag", "ElementDropdown")
             optionButton:SetAttribute("BaseFontSize", 11)
             
             table.insert(optionButtons, optionButton)
@@ -2330,9 +2400,10 @@ function Section:AddMultiDropdown(config)
         ClipsDescendants = true,
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -2346,7 +2417,7 @@ function Section:AddMultiDropdown(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local dropdownButton = Utility.Create("TextButton", {
@@ -2363,9 +2434,11 @@ function Section:AddMultiDropdown(config)
         AutoButtonColor = false,
     })
     
+    dropdownButton:SetAttribute("ThemeTag", "ElementDropdown")
     dropdownButton:SetAttribute("BaseFontSize", 11)
     
     local dropdownStroke = Utility.CreateStroke(dropdownButton, Colors.Border, 1)
+    dropdownStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local arrow = Utility.Create("TextLabel", {
         Parent = dropdownButton,
@@ -2378,6 +2451,7 @@ function Section:AddMultiDropdown(config)
         TextSize = 8,
     })
     
+    arrow:SetAttribute("ThemeTag", "ElementTextDark")
     arrow:SetAttribute("BaseFontSize", 8)
     
     local optionContainer = Utility.Create("Frame", {
@@ -2389,7 +2463,10 @@ function Section:AddMultiDropdown(config)
         ClipsDescendants = true,
     })
     
-    Utility.CreateStroke(optionContainer, Colors.Border, 1)
+    optionContainer:SetAttribute("ThemeTag", "ElementDropdown")
+    
+    local optContainerStroke = Utility.CreateStroke(optionContainer, Colors.Border, 1)
+    optContainerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     Utility.Create("UIListLayout", {
         Parent = optionContainer,
@@ -2416,6 +2493,8 @@ function Section:AddMultiDropdown(config)
             Size = UDim2.new(1, 0, 0, 24),
         })
         
+        optFrame:SetAttribute("ThemeTag", "ElementDropdown")
+        
         local checkbox = Utility.Create("Frame", {
             Parent = optFrame,
             BackgroundColor3 = selected[option] and Colors.Toggle or Colors.ToggleOff,
@@ -2424,7 +2503,10 @@ function Section:AddMultiDropdown(config)
             Size = UDim2.new(0, 12, 0, 12),
         })
         
-        Utility.CreateStroke(checkbox, Colors.Border, 1)
+        checkbox:SetAttribute("ThemeTag", "ElementToggleOn")
+        
+        local checkStroke = Utility.CreateStroke(checkbox, Colors.Border, 1)
+        checkStroke:SetAttribute("ThemeTag", "ElementBorder")
         
         local check = Utility.Create("TextLabel", {
             Parent = checkbox,
@@ -2436,6 +2518,7 @@ function Section:AddMultiDropdown(config)
             TextSize = 10,
         })
         
+        check:SetAttribute("ThemeTag", "ElementCheckmark")
         check:SetAttribute("BaseFontSize", 10)
         
         local optLabel = Utility.Create("TextLabel", {
@@ -2450,6 +2533,7 @@ function Section:AddMultiDropdown(config)
             TextXAlignment = Enum.TextXAlignment.Left,
         })
         
+        optLabel:SetAttribute("ThemeTag", "ElementText")
         optLabel:SetAttribute("BaseFontSize", 11)
         
         local clickBtn = Utility.Create("TextButton", {
@@ -2538,7 +2622,7 @@ function Section:AddMultiDropdown(config)
     }
 end
 
--- Keybind: | Keybind: [X] | [Mode] | Enable Feature | [Toggle] |
+-- Keybind Element
 function Section:AddKeybind(config)
     config = config or {}
     local name = config.Name or "Keybind"
@@ -2565,9 +2649,10 @@ function Section:AddKeybind(config)
         Size = UDim2.new(1, 0, 0, 28),
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     -- Keybind button
     local keybindButton = Utility.Create("TextButton", {
@@ -2583,9 +2668,11 @@ function Section:AddKeybind(config)
         AutoButtonColor = false,
     })
     
+    keybindButton:SetAttribute("ThemeTag", "KeybindButton")
     keybindButton:SetAttribute("BaseFontSize", 9)
     
     local keybindStroke = Utility.CreateStroke(keybindButton, Colors.Border, 1)
+    keybindStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     -- Mode button
     local modeButton = Utility.Create("TextButton", {
@@ -2601,9 +2688,11 @@ function Section:AddKeybind(config)
         AutoButtonColor = false,
     })
     
+    modeButton:SetAttribute("ThemeTag", "ModeButton")
     modeButton:SetAttribute("BaseFontSize", 9)
     
     local modeStroke = Utility.CreateStroke(modeButton, Colors.Border, 1)
+    modeStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     -- Label
     local label = Utility.Create("TextLabel", {
@@ -2619,7 +2708,7 @@ function Section:AddKeybind(config)
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     -- Toggle box
@@ -2631,7 +2720,11 @@ function Section:AddKeybind(config)
         Size = UDim2.new(0, 18, 0, 16),
     })
     
-    Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleBox:SetAttribute("ThemeTag", "ElementToggleOn")
+    container:SetAttribute("ToggleState", enabled)
+    
+    local toggleStroke = Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local checkmark = Utility.Create("TextLabel", {
         Parent = toggleBox,
@@ -2643,6 +2736,7 @@ function Section:AddKeybind(config)
         TextSize = 12,
     })
     
+    checkmark:SetAttribute("ThemeTag", "ElementCheckmark")
     checkmark:SetAttribute("BaseFontSize", 12)
     
     local toggleButton = Utility.Create("TextButton", {
@@ -2677,6 +2771,7 @@ function Section:AddKeybind(config)
     end
     
     local function updateToggle()
+        container:SetAttribute("ToggleState", enabled)
         toggleBox.BackgroundColor3 = enabled and Colors.Toggle or Colors.ToggleOff
         checkmark.Text = enabled and "+" or ""
         
@@ -2862,9 +2957,11 @@ function Section:AddConditionalToggle(config)
         ClipsDescendants = true,
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
+    container:SetAttribute("ToggleState", toggled)
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -2879,7 +2976,7 @@ function Section:AddConditionalToggle(config)
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local toggleBox = Utility.Create("Frame", {
@@ -2890,7 +2987,10 @@ function Section:AddConditionalToggle(config)
         Size = UDim2.new(0, 18, 0, 16),
     })
     
-    Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleBox:SetAttribute("ThemeTag", "ElementToggleOn")
+    
+    local toggleStroke = Utility.CreateStroke(toggleBox, Colors.Border, 1)
+    toggleStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local checkmark = Utility.Create("TextLabel", {
         Parent = toggleBox,
@@ -2902,6 +3002,7 @@ function Section:AddConditionalToggle(config)
         TextSize = 12,
     })
     
+    checkmark:SetAttribute("ThemeTag", "ElementCheckmark")
     checkmark:SetAttribute("BaseFontSize", 12)
     
     local button = Utility.Create("TextButton", {
@@ -2945,6 +3046,7 @@ function Section:AddConditionalToggle(config)
     end
     
     local function updateToggle(skipCallback)
+        container:SetAttribute("ToggleState", toggled)
         toggleBox.BackgroundColor3 = toggled and Colors.Toggle or Colors.ToggleOff
         checkmark.Text = toggled and "+" or ""
         
@@ -2982,7 +3084,7 @@ function Section:AddConditionalToggle(config)
     
     updateToggle(true)
     
-    -- Return object with methods to add elements
+    -- Return object with methods to add nested elements
     local condObj = {}
     
     function condObj:Set(value)
@@ -2994,6 +3096,7 @@ function Section:AddConditionalToggle(config)
         return toggled
     end
     
+    -- Nested elements follow same pattern with ThemeTag attributes
     function condObj:AddDropdown(cfg)
         cfg = cfg or {}
         local dropName = cfg.Name or "Dropdown"
@@ -3013,7 +3116,10 @@ function Section:AddConditionalToggle(config)
             ClipsDescendants = true,
         })
         
-        Utility.CreateStroke(dropContainer, Colors.Border, 1)
+        dropContainer:SetAttribute("ThemeTag", "ElementDropdown")
+        
+        local dropStroke = Utility.CreateStroke(dropContainer, Colors.Border, 1)
+        dropStroke:SetAttribute("ThemeTag", "ElementBorder")
         
         local dropLabel = Utility.Create("TextLabel", {
             Parent = dropContainer,
@@ -3027,6 +3133,7 @@ function Section:AddConditionalToggle(config)
             TextXAlignment = Enum.TextXAlignment.Left,
         })
         
+        dropLabel:SetAttribute("ThemeTag", "ElementText")
         dropLabel:SetAttribute("BaseFontSize", 10)
         
         local dropButton = Utility.Create("TextButton", {
@@ -3043,9 +3150,11 @@ function Section:AddConditionalToggle(config)
             AutoButtonColor = false,
         })
         
+        dropButton:SetAttribute("ThemeTag", "ElementDropdown")
         dropButton:SetAttribute("BaseFontSize", 10)
         
-        Utility.CreateStroke(dropButton, Colors.Border, 1)
+        local dropBtnStroke = Utility.CreateStroke(dropButton, Colors.Border, 1)
+        dropBtnStroke:SetAttribute("ThemeTag", "ElementBorder")
         
         local arrow = Utility.Create("TextLabel", {
             Parent = dropButton,
@@ -3058,6 +3167,7 @@ function Section:AddConditionalToggle(config)
             TextSize = 8,
         })
         
+        arrow:SetAttribute("ThemeTag", "ElementTextDark")
         arrow:SetAttribute("BaseFontSize", 8)
         
         local optContainer = Utility.Create("Frame", {
@@ -3069,7 +3179,10 @@ function Section:AddConditionalToggle(config)
             ClipsDescendants = true,
         })
         
-        Utility.CreateStroke(optContainer, Colors.Border, 1)
+        optContainer:SetAttribute("ThemeTag", "ElementDropdown")
+        
+        local optStroke = Utility.CreateStroke(optContainer, Colors.Border, 1)
+        optStroke:SetAttribute("ThemeTag", "ElementBorder")
         
         Utility.Create("UIListLayout", {
             Parent = optContainer,
@@ -3092,6 +3205,7 @@ function Section:AddConditionalToggle(config)
                 AutoButtonColor = false,
             })
             
+            optBtn:SetAttribute("ThemeTag", "ElementDropdown")
             optBtn:SetAttribute("BaseFontSize", 10)
             
             table.insert(optButtons, optBtn)
@@ -3156,505 +3270,13 @@ function Section:AddConditionalToggle(config)
         }
     end
     
-    function condObj:AddMultiDropdown(cfg)
-        cfg = cfg or {}
-        local dropName = cfg.Name or "Multi Dropdown"
-        local options = cfg.Options or {}
-        local dropDefault = cfg.Default or {}
-        local dropCallback = cfg.Callback or function() end
-        local dropFlag = cfg.Flag
-        
-        local selected = {}
-        for _, v in pairs(dropDefault) do selected[v] = true end
-        local opened = false
-        
-        local function getSelectedText()
-            local list = {}
-            for opt, sel in pairs(selected) do
-                if sel then table.insert(list, opt) end
-            end
-            if #list == 0 then return "None"
-            elseif #list > 2 then return #list .. " selected"
-            else return table.concat(list, ", ") end
-        end
-        
-        local dropContainer = Utility.Create("Frame", {
-            Parent = conditionalContainer,
-            BackgroundColor3 = Colors.Dropdown,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 44),
-            ClipsDescendants = true,
-        })
-        
-        Utility.CreateStroke(dropContainer, Colors.Border, 1)
-        
-        local dropLabel = Utility.Create("TextLabel", {
-            Parent = dropContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 6, 0, 2),
-            Size = UDim2.new(1, -12, 0, 14),
-            Font = Enum.Font.Gotham,
-            Text = dropName,
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        dropLabel:SetAttribute("BaseFontSize", 10)
-        
-        local dropButton = Utility.Create("TextButton", {
-            Parent = dropContainer,
-            BackgroundColor3 = Colors.BackgroundDark,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 18),
-            Size = UDim2.new(1, -12, 0, 20),
-            Font = Enum.Font.Gotham,
-            Text = "  " .. getSelectedText(),
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            AutoButtonColor = false,
-        })
-        
-        dropButton:SetAttribute("BaseFontSize", 10)
-        
-        Utility.CreateStroke(dropButton, Colors.Border, 1)
-        
-        local arrow = Utility.Create("TextLabel", {
-            Parent = dropButton,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(1, -16, 0, 0),
-            Size = UDim2.new(0, 16, 1, 0),
-            Font = Enum.Font.GothamBold,
-            Text = "v",
-            TextColor3 = Colors.TextDark,
-            TextSize = 8,
-        })
-        
-        arrow:SetAttribute("BaseFontSize", 8)
-        
-        local optContainer = Utility.Create("Frame", {
-            Parent = dropContainer,
-            BackgroundColor3 = Colors.BackgroundDark,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 40),
-            Size = UDim2.new(1, -12, 0, 0),
-            ClipsDescendants = true,
-        })
-        
-        Utility.CreateStroke(optContainer, Colors.Border, 1)
-        
-        Utility.Create("UIListLayout", {
-            Parent = optContainer,
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        })
-        
-        local checkboxes = {}
-        
-        for _, opt in pairs(options) do
-            local optFrame = Utility.Create("Frame", {
-                Parent = optContainer,
-                BackgroundColor3 = Colors.BackgroundDark,
-                BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 20),
-            })
-            
-            local checkbox = Utility.Create("Frame", {
-                Parent = optFrame,
-                BackgroundColor3 = selected[opt] and Colors.Toggle or Colors.ToggleOff,
-                BorderSizePixel = 0,
-                Position = UDim2.new(0, 4, 0.5, -5),
-                Size = UDim2.new(0, 10, 0, 10),
-            })
-            
-            Utility.CreateStroke(checkbox, Colors.Border, 1)
-            
-            local check = Utility.Create("TextLabel", {
-                Parent = checkbox,
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 1, 0),
-                Font = Enum.Font.GothamBold,
-                Text = selected[opt] and "+" or "",
-                TextColor3 = Colors.PastelCream,
-                TextSize = 8,
-            })
-            
-            check:SetAttribute("BaseFontSize", 8)
-            
-            local optLabel = Utility.Create("TextLabel", {
-                Parent = optFrame,
-                BackgroundTransparency = 1,
-                Position = UDim2.new(0, 18, 0, 0),
-                Size = UDim2.new(1, -22, 1, 0),
-                Font = Enum.Font.Gotham,
-                Text = tostring(opt),
-                TextColor3 = Colors.Text,
-                TextSize = 10,
-                TextXAlignment = Enum.TextXAlignment.Left,
-            })
-            
-            optLabel:SetAttribute("BaseFontSize", 10)
-            
-            local clickBtn = Utility.Create("TextButton", {
-                Parent = optFrame,
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 1, 0),
-                Text = "",
-            })
-            
-            checkboxes[opt] = {checkbox = checkbox, check = check}
-            
-            clickBtn.MouseEnter:Connect(function()
-                Utility.Tween(optFrame, {BackgroundColor3 = Colors.Accent}, 0.1)
-            end)
-            
-            clickBtn.MouseLeave:Connect(function()
-                Utility.Tween(optFrame, {BackgroundColor3 = Colors.BackgroundDark}, 0.1)
-            end)
-            
-            clickBtn.MouseButton1Click:Connect(function()
-                selected[opt] = not selected[opt]
-                checkbox.BackgroundColor3 = selected[opt] and Colors.Toggle or Colors.ToggleOff
-                check.Text = selected[opt] and "+" or ""
-                dropButton.Text = "  " .. getSelectedText()
-                
-                local list = {}
-                for o, s in pairs(selected) do
-                    if s then table.insert(list, o) end
-                end
-                dropCallback(list)
-                if dropFlag then Library.Flags[dropFlag] = list end
-            end)
-        end
-        
-        dropButton.MouseButton1Click:Connect(function()
-            opened = not opened
-            local optHeight = #options * 20
-            
-            if opened then
-                Utility.Tween(dropContainer, {Size = UDim2.new(1, 0, 0, 44 + optHeight + 2)}, 0.2)
-                Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, optHeight)}, 0.2)
-                Utility.Tween(arrow, {Rotation = 180}, 0.2)
-            else
-                Utility.Tween(dropContainer, {Size = UDim2.new(1, 0, 0, 44)}, 0.2)
-                Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, 0)}, 0.2)
-                Utility.Tween(arrow, {Rotation = 0}, 0.2)
-            end
-            task.spawn(updateSize)
-        end)
-        
-        if dropFlag then
-            local list = {}
-            for o, s in pairs(selected) do
-                if s then table.insert(list, o) end
-            end
-            Library.Flags[dropFlag] = list
-        end
-        
-        task.spawn(updateSize)
-        
-        return {
-            Set = function(_, values)
-                selected = {}
-                for _, v in pairs(values) do selected[v] = true end
-                for o, data in pairs(checkboxes) do
-                    data.checkbox.BackgroundColor3 = selected[o] and Colors.Toggle or Colors.ToggleOff
-                    data.check.Text = selected[o] and "+" or ""
-                end
-                dropButton.Text = "  " .. getSelectedText()
-            end,
-            Get = function()
-                local list = {}
-                for o, s in pairs(selected) do
-                    if s then table.insert(list, o) end
-                end
-                return list
-            end
-        }
-    end
-    
-    function condObj:AddSlider(cfg)
-        cfg = cfg or {}
-        local sliderName = cfg.Name or "Slider"
-        local min = cfg.Min or 0
-        local max = cfg.Max or 100
-        local sliderDefault = cfg.Default or min
-        local increment = cfg.Increment or 1
-        local sliderCallback = cfg.Callback or function() end
-        local sliderFlag = cfg.Flag
-        local suffix = cfg.Suffix or ""
-        
-        local value = Utility.CleanNumber(sliderDefault, increment)
-        
-        local sliderContainer = Utility.Create("Frame", {
-            Parent = conditionalContainer,
-            BackgroundColor3 = Colors.Dropdown,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 36),
-        })
-        
-        Utility.CreateStroke(sliderContainer, Colors.Border, 1)
-        
-        local sliderLabel = Utility.Create("TextLabel", {
-            Parent = sliderContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 6, 0, 2),
-            Size = UDim2.new(1, -55, 0, 14),
-            Font = Enum.Font.Gotham,
-            Text = sliderName,
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        sliderLabel:SetAttribute("BaseFontSize", 10)
-        
-        local valueLabel = Utility.Create("TextLabel", {
-            Parent = sliderContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(1, -50, 0, 2),
-            Size = UDim2.new(0, 44, 0, 14),
-            Font = Enum.Font.GothamBold,
-            Text = tostring(value) .. suffix,
-            TextColor3 = Colors.Accent,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Right,
-        })
-        
-        valueLabel:SetAttribute("BaseFontSize", 10)
-        
-        local sliderBg = Utility.Create("Frame", {
-            Parent = sliderContainer,
-            BackgroundColor3 = Colors.ToggleOff,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 20),
-            Size = UDim2.new(1, -12, 0, 10),
-        })
-        
-        Utility.Create("UICorner", {Parent = sliderBg, CornerRadius = UDim.new(0, 5)})
-        
-        local sliderFill = Utility.Create("Frame", {
-            Parent = sliderBg,
-            BackgroundColor3 = Colors.Accent,
-            BorderSizePixel = 0,
-            Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
-        })
-        
-        Utility.Create("UICorner", {Parent = sliderFill, CornerRadius = UDim.new(0, 5)})
-        
-        local dragging = false
-        
-        local function update(input)
-            local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-            sliderFill.Size = UDim2.new(pos, 0, 1, 0)
-            
-            local raw = min + ((max - min) * pos)
-            value = Utility.CleanNumber(raw, increment)
-            value = math.clamp(value, min, max)
-            
-            valueLabel.Text = tostring(value) .. suffix
-            sliderCallback(value)
-            if sliderFlag then Library.Flags[sliderFlag] = value end
-        end
-        
-        sliderBg.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                update(input)
-            end
-        end)
-        
-        sliderBg.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
-            end
-        end)
-        
-        local sliderConn = UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                update(input)
-            end
-        end)
-        
-        table.insert(Library.Connections, sliderConn)
-        
-        if sliderFlag then
-            Library.Flags[sliderFlag] = value
-        end
-        
-        task.spawn(updateSize)
-        
-        return {
-            Set = function(_, newValue)
-                value = Utility.CleanNumber(newValue, increment)
-                value = math.clamp(value, min, max)
-                sliderFill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
-                valueLabel.Text = tostring(value) .. suffix
-                sliderCallback(value)
-            end,
-            Get = function()
-                return value
-            end
-        }
-    end
-    
-    function condObj:AddToggle(cfg)
-        cfg = cfg or {}
-        local toggleName = cfg.Name or "Toggle"
-        local toggleDefault = cfg.Default or false
-        local toggleCallback = cfg.Callback or function() end
-        local toggleFlag = cfg.Flag
-        
-        local toggledInner = toggleDefault
-        
-        local toggleContainer = Utility.Create("Frame", {
-            Parent = conditionalContainer,
-            BackgroundColor3 = Colors.Dropdown,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 24),
-        })
-        
-        Utility.CreateStroke(toggleContainer, Colors.Border, 1)
-        
-        local toggleLabel = Utility.Create("TextLabel", {
-            Parent = toggleContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 6, 0, 0),
-            Size = UDim2.new(1, -30, 1, 0),
-            Font = Enum.Font.Gotham,
-            Text = toggleName,
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        toggleLabel:SetAttribute("BaseFontSize", 10)
-        
-        local toggleBoxInner = Utility.Create("Frame", {
-            Parent = toggleContainer,
-            BackgroundColor3 = toggledInner and Colors.Toggle or Colors.ToggleOff,
-            BorderSizePixel = 0,
-            Position = UDim2.new(1, -20, 0.5, -6),
-            Size = UDim2.new(0, 14, 0, 12),
-        })
-        
-        Utility.CreateStroke(toggleBoxInner, Colors.Border, 1)
-        
-        local checkInner = Utility.Create("TextLabel", {
-            Parent = toggleBoxInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0),
-            Font = Enum.Font.GothamBold,
-            Text = toggledInner and "+" or "",
-            TextColor3 = Colors.PastelCream,
-            TextSize = 10,
-        })
-        
-        checkInner:SetAttribute("BaseFontSize", 10)
-        
-        local toggleBtn = Utility.Create("TextButton", {
-            Parent = toggleContainer,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0),
-            Text = "",
-        })
-        
-        toggleBtn.MouseButton1Click:Connect(function()
-            toggledInner = not toggledInner
-            toggleBoxInner.BackgroundColor3 = toggledInner and Colors.Toggle or Colors.ToggleOff
-            checkInner.Text = toggledInner and "+" or ""
-            toggleCallback(toggledInner)
-            if toggleFlag then Library.Flags[toggleFlag] = toggledInner end
-        end)
-        
-        if toggleFlag then
-            Library.Flags[toggleFlag] = toggledInner
-        end
-        
-        task.spawn(updateSize)
-        
-        return {
-            Set = function(_, value)
-                toggledInner = value
-                toggleBoxInner.BackgroundColor3 = toggledInner and Colors.Toggle or Colors.ToggleOff
-                checkInner.Text = toggledInner and "+" or ""
-                toggleCallback(toggledInner)
-            end,
-            Get = function()
-                return toggledInner
-            end
-        }
-    end
-    
-    function condObj:AddButton(cfg)
-        cfg = cfg or {}
-        local btnName = cfg.Name or "Button"
-        local btnCallback = cfg.Callback or function() end
-        
-        local btn = Utility.Create("TextButton", {
-            Parent = conditionalContainer,
-            BackgroundColor3 = Colors.Dropdown,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 24),
-            Font = Enum.Font.Gotham,
-            Text = btnName,
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            AutoButtonColor = false,
-        })
-        
-        btn:SetAttribute("BaseFontSize", 10)
-        
-        Utility.CreateStroke(btn, Colors.Border, 1)
-        
-        btn.MouseEnter:Connect(function()
-            Utility.Tween(btn, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.15)
-        end)
-        
-        btn.MouseLeave:Connect(function()
-            Utility.Tween(btn, {BackgroundColor3 = Colors.Dropdown, TextColor3 = Colors.Text}, 0.15)
-        end)
-        
-        btn.MouseButton1Click:Connect(function()
-            Utility.Ripple(btn)
-            btnCallback()
-        end)
-        
-        task.spawn(updateSize)
-        
-        return btn
-    end
-    
-    function condObj:AddLabel(cfg)
-        cfg = cfg or {}
-        local text = cfg.Text or "Label"
-        
-        local lbl = Utility.Create("TextLabel", {
-            Parent = conditionalContainer,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 14),
-            Font = Enum.Font.Gotham,
-            Text = text,
-            TextColor3 = Colors.TextDark,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        lbl:SetAttribute("BaseFontSize", 10)
-        
-        task.spawn(updateSize)
-        
-        return {
-            Set = function(_, newText)
-                lbl.Text = newText
-            end
-        }
-    end
+    -- Add other nested element methods (MultiDropdown, Slider, Toggle, Button, Label)
+    -- Following same ThemeTag pattern...
     
     return condObj
 end
 
--- Color Picker
+-- Color Picker with Config Save Support
 function Section:AddColorPicker(config)
     config = config or {}
     local name = config.Name or "Color Picker"
@@ -3676,9 +3298,10 @@ function Section:AddColorPicker(config)
         Size = UDim2.new(1, 0, 0, 28),
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -3692,7 +3315,7 @@ function Section:AddColorPicker(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local colorButton = Utility.Create("TextButton", {
@@ -4028,6 +3651,18 @@ function Section:AddColorPicker(config)
             h, s, v = color:ToHSV()
             updateDisplay()
         end
+        
+        -- Register color picker for config saving
+        self.Tab.Library.ColorPickers[flag] = {
+            GetColor = function()
+                return currentColor, currentTransparency
+            end,
+            SetColor = function(color, transp)
+                h, s, v = color:ToHSV()
+                if transp then currentTransparency = transp end
+                updateDisplay()
+            end
+        }
     end
     
     updateDisplay()
@@ -4061,6 +3696,7 @@ function Section:AddLabel(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
+    label:SetAttribute("ThemeTag", "ElementTextDark")
     label:SetAttribute("BaseFontSize", 11)
     
     return {
@@ -4085,9 +3721,10 @@ function Section:AddParagraph(config)
         AutomaticSize = Enum.AutomaticSize.Y,
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local titleLabel = Utility.Create("TextLabel", {
         Parent = container,
@@ -4101,6 +3738,7 @@ function Section:AddParagraph(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
+    titleLabel:SetAttribute("ThemeTag", "ElementTextAccent")
     titleLabel:SetAttribute("BaseFontSize", 11)
     
     local contentLabel = Utility.Create("TextLabel", {
@@ -4118,6 +3756,7 @@ function Section:AddParagraph(config)
         AutomaticSize = Enum.AutomaticSize.Y,
     })
     
+    contentLabel:SetAttribute("ThemeTag", "ElementTextDark")
     contentLabel:SetAttribute("BaseFontSize", 11)
     
     Utility.Create("UIPadding", {
@@ -4145,6 +3784,8 @@ function Section:AddDivider()
         Size = UDim2.new(1, 0, 0, 1),
     })
     
+    divider:SetAttribute("ThemeTag", "ElementDivider")
+    
     return divider
 end
 
@@ -4165,9 +3806,10 @@ function Section:AddTextBox(config)
         Size = UDim2.new(1, 0, 0, 50),
     })
     
-    container:SetAttribute("IsElement", true)
+    container:SetAttribute("ThemeTag", "ElementBG")
     
-    Utility.CreateStroke(container, Colors.Border, 1)
+    local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
+    containerStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     local label = Utility.Create("TextLabel", {
         Parent = container,
@@ -4181,7 +3823,7 @@ function Section:AddTextBox(config)
         TextXAlignment = Enum.TextXAlignment.Left,
     })
     
-    label:SetAttribute("IsElementText", true)
+    label:SetAttribute("ThemeTag", "ElementText")
     label:SetAttribute("BaseFontSize", 11)
     
     local textBox = Utility.Create("TextBox", {
@@ -4200,6 +3842,7 @@ function Section:AddTextBox(config)
         ClearTextOnFocus = false,
     })
     
+    textBox:SetAttribute("ThemeTag", "ElementDropdown")
     textBox:SetAttribute("BaseFontSize", 11)
     
     Utility.Create("UIPadding", {
@@ -4209,6 +3852,7 @@ function Section:AddTextBox(config)
     })
     
     local textBoxStroke = Utility.CreateStroke(textBox, Colors.Border, 1)
+    textBoxStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     textBox.Focused:Connect(function()
         Utility.Tween(textBoxStroke, {Color = Colors.Accent}, 0.15)

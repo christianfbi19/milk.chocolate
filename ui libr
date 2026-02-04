@@ -27,9 +27,6 @@ local Mouse = Player:GetMouse()
 -- Config folder
 local ConfigFolder = "milk"
 
--- Color clipboard for copy/paste
-local ColorClipboard = nil
-
 -- Theme Definitions
 local Themes = {
     ["Milk Chocolate"] = {

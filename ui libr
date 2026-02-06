@@ -1,11 +1,13 @@
 --[[
-    milk.chocolate UI Library v2.6.3
+    milk.chocolate UI Library v2.7.0
     A Linoria-style UI with multiple themes
     
-    Changes in v2.6.3:
-    - Fixed theme switching for ALL UI elements
-    - Fixed color picker config saving/loading
-    - Complete theme update system for all components
+    Changes in v2.7.0:
+    - Added customizable UI toggle keybind
+    - Added separate watermark toggle
+    - Added separate keybind widget toggle
+    - Added glow effect for "Always" mode keybinds
+    - Watermark and keybind widget now independent from main UI
 ]]
 
 local MilkChocolate = {}
@@ -55,6 +57,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(40, 32, 26),
         Notification = Color3.fromRGB(35, 28, 24),
         KeybindActive = Color3.fromRGB(255, 220, 150),
+        KeybindAlways = Color3.fromRGB(255, 200, 100),
     },
     ["White Chocolate"] = {
         Name = "White Chocolate",
@@ -81,6 +84,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(240, 233, 220),
         Notification = Color3.fromRGB(250, 245, 235),
         KeybindActive = Color3.fromRGB(120, 160, 80),
+        KeybindAlways = Color3.fromRGB(100, 140, 70),
     },
     ["Oreo"] = {
         Name = "Oreo",
@@ -107,6 +111,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(32, 32, 36),
         Notification = Color3.fromRGB(25, 25, 28),
         KeybindActive = Color3.fromRGB(150, 255, 150),
+        KeybindAlways = Color3.fromRGB(120, 220, 120),
     },
     ["Mint"] = {
         Name = "Mint",
@@ -133,6 +138,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(32, 45, 40),
         Notification = Color3.fromRGB(25, 35, 32),
         KeybindActive = Color3.fromRGB(150, 255, 200),
+        KeybindAlways = Color3.fromRGB(120, 230, 180),
     },
     ["Dubai"] = {
         Name = "Dubai",
@@ -159,6 +165,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(28, 24, 35),
         Notification = Color3.fromRGB(20, 18, 25),
         KeybindActive = Color3.fromRGB(255, 230, 130),
+        KeybindAlways = Color3.fromRGB(235, 200, 100),
     },
     ["Strawberry"] = {
         Name = "Strawberry",
@@ -185,6 +192,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(42, 28, 32),
         Notification = Color3.fromRGB(35, 22, 25),
         KeybindActive = Color3.fromRGB(255, 160, 180),
+        KeybindAlways = Color3.fromRGB(240, 130, 150),
     },
     ["Dark Chocolate"] = {
         Name = "Dark Chocolate",
@@ -211,6 +219,7 @@ local Themes = {
         Dropdown = Color3.fromRGB(30, 24, 20),
         Notification = Color3.fromRGB(22, 18, 15),
         KeybindActive = Color3.fromRGB(220, 170, 130),
+        KeybindAlways = Color3.fromRGB(190, 150, 110),
     },
 }
 
@@ -678,6 +687,8 @@ function MilkChocolate.new(config)
     self.ThemeObjects = {}
     self.ConfigName = config.ConfigName or "default"
     self.Visible = true
+    self.WatermarkVisible = true
+    self.KeybindWidgetVisible = true
     self.OpenedFrames = {}
     self.Connections = {}
     self.ResizeLines = {}
@@ -758,11 +769,24 @@ function MilkChocolate:UpdateAllThemeColors()
     -- Update keybind widget entries
     for name, entry in pairs(self.KeybindWidgetEntries) do
         if entry.NameLabel then
+            local mode = entry.Mode or "Hold"
             local isActive = self.KeybindStates[name] or false
-            entry.NameLabel.TextColor3 = isActive and Colors.KeybindActive or Colors.Text
+            
+            if mode == "Always" then
+                entry.NameLabel.TextColor3 = Colors.KeybindAlways
+            elseif isActive then
+                entry.NameLabel.TextColor3 = Colors.KeybindActive
+            else
+                entry.NameLabel.TextColor3 = Colors.Text
+            end
         end
         if entry.KeyLabel then entry.KeyLabel.TextColor3 = Colors.Accent end
         if entry.ModeLabel then entry.ModeLabel.TextColor3 = Colors.TextDark end
+        
+        -- Update glow for always mode
+        if entry.Glow then
+            entry.Glow.ImageColor3 = Colors.KeybindAlways
+        end
     end
     
     -- Update tabs
@@ -1234,6 +1258,13 @@ function MilkChocolate:AddKeybindToWidget(name, key, mode)
         Size = UDim2.new(1, 0, 0, 16),
     })
     
+    -- Add glow for "Always" mode
+    local glow
+    if mode == "Always" then
+        glow = Utility.CreateGlow(keybindFrame, Colors.KeybindAlways, 30, 0.75)
+        glow.ZIndex = 0
+    end
+    
     local nameLabel = Utility.Create("TextLabel", {
         Name = "Name",
         Parent = keybindFrame,
@@ -1242,10 +1273,11 @@ function MilkChocolate:AddKeybindToWidget(name, key, mode)
         Size = UDim2.new(0, 80, 1, 0),
         Font = Enum.Font.Gotham,
         Text = name,
-        TextColor3 = Colors.Text,
+        TextColor3 = mode == "Always" and Colors.KeybindAlways or Colors.Text,
         TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 1,
     })
     
     local modeLabel = Utility.Create("TextLabel", {
@@ -1259,6 +1291,7 @@ function MilkChocolate:AddKeybindToWidget(name, key, mode)
         TextColor3 = Colors.TextDark,
         TextSize = 9,
         TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 1,
     })
     
     local keyLabel = Utility.Create("TextLabel", {
@@ -1272,15 +1305,18 @@ function MilkChocolate:AddKeybindToWidget(name, key, mode)
         TextColor3 = Colors.Accent,
         TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Right,
+        ZIndex = 1,
     })
     
     self.KeybindWidgetEntries[name] = {
         Frame = keybindFrame,
         NameLabel = nameLabel,
         KeyLabel = keyLabel,
-        ModeLabel = modeLabel
+        ModeLabel = modeLabel,
+        Glow = glow,
+        Mode = mode
     }
-    self.KeybindStates[name] = false
+    self.KeybindStates[name] = mode == "Always"
     
     self:UpdateKeybindWidgetSize()
 end
@@ -1290,7 +1326,15 @@ function MilkChocolate:SetKeybindState(name, isActive)
     
     local entry = self.KeybindWidgetEntries[name]
     if entry and entry.NameLabel then
-        entry.NameLabel.TextColor3 = isActive and Colors.KeybindActive or Colors.Text
+        local mode = entry.Mode or "Hold"
+        
+        if mode == "Always" then
+            entry.NameLabel.TextColor3 = Colors.KeybindAlways
+        elseif isActive then
+            entry.NameLabel.TextColor3 = Colors.KeybindActive
+        else
+            entry.NameLabel.TextColor3 = Colors.Text
+        end
     end
 end
 
@@ -1309,6 +1353,24 @@ function MilkChocolate:UpdateKeybindInWidget(name, key, mode)
     if entry then
         if entry.KeyLabel then entry.KeyLabel.Text = "[" .. key.Name .. "]" end
         if entry.ModeLabel then entry.ModeLabel.Text = "[" .. mode .. "]" end
+        
+        entry.Mode = mode
+        
+        -- Add or remove glow based on mode
+        if mode == "Always" then
+            if not entry.Glow then
+                entry.Glow = Utility.CreateGlow(entry.Frame, Colors.KeybindAlways, 30, 0.75)
+                entry.Glow.ZIndex = 0
+            end
+            entry.NameLabel.TextColor3 = Colors.KeybindAlways
+        else
+            if entry.Glow then
+                entry.Glow:Destroy()
+                entry.Glow = nil
+            end
+            local isActive = self.KeybindStates[name] or false
+            entry.NameLabel.TextColor3 = isActive and Colors.KeybindActive or Colors.Text
+        end
     end
 end
 
@@ -1422,7 +1484,7 @@ function MilkChocolate:SetupInput()
         if gameProcessed then return end
         
         if input.KeyCode == self.ToggleKey then
-            self:Toggle()
+            self:ToggleUI()
         end
     end)
     
@@ -1446,7 +1508,8 @@ function MilkChocolate:SetupInput()
     table.insert(self.Connections, closeConnection)
 end
 
-function MilkChocolate:Toggle(visible)
+-- New method: ToggleUI (only main UI)
+function MilkChocolate:ToggleUI(visible)
     if visible ~= nil then
         self.Visible = visible
     else
@@ -1454,8 +1517,28 @@ function MilkChocolate:Toggle(visible)
     end
     
     self.MainFrame.Visible = self.Visible
-    self.Watermark.Visible = self.Visible
-    self.KeybindWidget.Visible = self.Visible
+end
+
+-- New method: ToggleWatermark
+function MilkChocolate:ToggleWatermark(visible)
+    if visible ~= nil then
+        self.WatermarkVisible = visible
+    else
+        self.WatermarkVisible = not self.WatermarkVisible
+    end
+    
+    self.Watermark.Visible = self.WatermarkVisible
+end
+
+-- New method: ToggleKeybindWidget
+function MilkChocolate:ToggleKeybindWidget(visible)
+    if visible ~= nil then
+        self.KeybindWidgetVisible = visible
+    else
+        self.KeybindWidgetVisible = not self.KeybindWidgetVisible
+    end
+    
+    self.KeybindWidget.Visible = self.KeybindWidgetVisible
 end
 
 function MilkChocolate:SetToggleKey(key)
@@ -1493,7 +1576,16 @@ end
 -- Config System with Color Picker Support
 function MilkChocolate:SaveConfig(name)
     name = name or self.ConfigName
-    local configData = {theme = self.CurrentTheme, flags = {}, colorPickers = {}}
+    local configData = {
+        theme = self.CurrentTheme, 
+        flags = {}, 
+        colorPickers = {},
+        uiSettings = {
+            toggleKey = tostring(self.ToggleKey),
+            watermarkVisible = self.WatermarkVisible,
+            keybindWidgetVisible = self.KeybindWidgetVisible
+        }
+    }
     
     for flag, value in pairs(self.Flags) do
         if typeof(value) == "Color3" then
@@ -1541,6 +1633,24 @@ function MilkChocolate:LoadConfig(name)
     end
     
     if configData.theme then self:SetTheme(configData.theme) end
+    
+    -- Load UI settings
+    if configData.uiSettings then
+        if configData.uiSettings.toggleKey then
+            local enumType, enumValue = configData.uiSettings.toggleKey:match("Enum%.(%w+)%.(%w+)")
+            if enumType and enumValue then
+                pcall(function() 
+                    self.ToggleKey = Enum[enumType][enumValue]
+                end)
+            end
+        end
+        if configData.uiSettings.watermarkVisible ~= nil then
+            self:ToggleWatermark(configData.uiSettings.watermarkVisible)
+        end
+        if configData.uiSettings.keybindWidgetVisible ~= nil then
+            self:ToggleKeybindWidget(configData.uiSettings.keybindWidgetVisible)
+        end
+    end
     
     for flag, data in pairs(configData.flags) do
         local value
@@ -2622,7 +2732,7 @@ function Section:AddMultiDropdown(config)
     }
 end
 
--- Keybind Element
+-- Keybind Element (Simplified with glow for "Always" mode)
 function Section:AddKeybind(config)
     config = config or {}
     local name = config.Name or "Keybind"
@@ -2653,6 +2763,12 @@ function Section:AddKeybind(config)
     
     local containerStroke = Utility.CreateStroke(container, Colors.Border, 1)
     containerStroke:SetAttribute("ThemeTag", "ElementBorder")
+    
+    -- Glow for "Always" mode
+    local alwaysGlow
+    if mode == "Always" and enabled then
+        alwaysGlow = Utility.CreateGlow(container, Colors.KeybindAlways, 30, 0.7)
+    end
     
     -- Keybind button
     local keybindButton = Utility.Create("TextButton", {
@@ -2754,6 +2870,19 @@ function Section:AddKeybind(config)
         return currentKey.Name
     end
     
+    local function updateGlow()
+        if mode == "Always" and enabled then
+            if not alwaysGlow then
+                alwaysGlow = Utility.CreateGlow(container, Colors.KeybindAlways, 30, 0.7)
+            end
+        else
+            if alwaysGlow then
+                alwaysGlow:Destroy()
+                alwaysGlow = nil
+            end
+        end
+    end
+    
     local function updateWidget()
         if showWidget then
             if currentKey == Enum.KeyCode.Unknown or currentKey == Enum.KeyCode.Backspace or not enabled then
@@ -2784,6 +2913,7 @@ function Section:AddKeybind(config)
             callback(true)
         end
         
+        updateGlow()
         updateWidget()
         
         if flag then
@@ -2827,6 +2957,7 @@ function Section:AddKeybind(config)
             callback(false)
         end
         
+        updateGlow()
         updateWidget()
     end)
     
@@ -2909,6 +3040,8 @@ function Section:AddKeybind(config)
         callback(true)
     end
     
+    updateGlow()
+    
     return {
         SetKey = function(_, key)
             if key == Enum.KeyCode.Backspace then key = Enum.KeyCode.Unknown end
@@ -2930,6 +3063,7 @@ function Section:AddKeybind(config)
                 modeIndex = idx
                 mode = newMode
                 modeButton.Text = mode
+                updateGlow()
                 updateWidget()
             end
         end,
@@ -3095,7 +3229,7 @@ function Section:AddConditionalToggle(config)
     function condObj:Get()
         return toggled
     end
-    
+
 -- Nested element methods with full implementations
 function condObj:AddDropdown(cfg)
     cfg = cfg or {}
@@ -3807,6 +3941,7 @@ end
 
 return condObj
 end
+
 -- Color Picker with Config Save Support
 function Section:AddColorPicker(config)
     config = config or {}

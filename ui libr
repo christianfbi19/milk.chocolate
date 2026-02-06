@@ -2257,7 +2257,7 @@ function Section:AddSlider(config)
     }
 end
 
--- FIXED DROPDOWN WITH SCROLLING
+-- FIXED DROPDOWN - Using Multi-Dropdown structure
 function Section:AddDropdown(config)
     config = config or {}
     local name = config.Name or "Dropdown"
@@ -2275,7 +2275,7 @@ function Section:AddDropdown(config)
         BackgroundColor3 = Colors.BackgroundLight,
         BorderSizePixel = 0,
         Size = UDim2.new(1, 0, 0, 50),
-        ClipsDescendants = true,
+        ClipsDescendants = false, -- IMPORTANT: Don't clip so dropdown can expand
     })
     
     container:SetAttribute("ThemeTag", "ElementBG")
@@ -2332,41 +2332,43 @@ function Section:AddDropdown(config)
     arrow:SetAttribute("ThemeTag", "ElementTextDark")
     arrow:SetAttribute("BaseFontSize", 8)
     
-    -- FIXED: Use ScrollingFrame for option container to allow scrolling
-    local optionContainer = Utility.Create("ScrollingFrame", {
+    -- Dropdown list container (appears below main container)
+    local dropdownList = Utility.Create("ScrollingFrame", {
         Parent = container,
         BackgroundColor3 = Colors.Dropdown,
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 8, 0, 46),
+        Position = UDim2.new(0, 8, 1, 2), -- Position BELOW the container
         Size = UDim2.new(1, -16, 0, 0),
         ClipsDescendants = true,
         ScrollBarThickness = 4,
         ScrollBarImageColor3 = Colors.Accent,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+        ZIndex = 1000, -- High ZIndex to appear above other elements
     })
     
-    optionContainer:SetAttribute("ThemeTag", "ElementDropdown")
+    dropdownList:SetAttribute("ThemeTag", "ElementDropdown")
     
-    local optContainerStroke = Utility.CreateStroke(optionContainer, Colors.Border, 1)
-    optContainerStroke:SetAttribute("ThemeTag", "ElementBorder")
+    local listStroke = Utility.CreateStroke(dropdownList, Colors.Border, 1)
+    listStroke:SetAttribute("ThemeTag", "ElementBorder")
     
     Utility.Create("UIListLayout", {
-        Parent = optionContainer,
+        Parent = dropdownList,
         SortOrder = Enum.SortOrder.LayoutOrder,
     })
     
     local optionButtons = {}
     
     local function createOptions()
-        for _, child in pairs(optionContainer:GetChildren()) do
+        for _, child in pairs(dropdownList:GetChildren()) do
             if child:IsA("TextButton") then child:Destroy() end
         end
         optionButtons = {}
         
         for _, option in pairs(options) do
             local optionButton = Utility.Create("TextButton", {
-                Parent = optionContainer,
+                Parent = dropdownList,
                 BackgroundColor3 = Colors.Dropdown,
                 BorderSizePixel = 0,
                 Size = UDim2.new(1, 0, 0, 24),
@@ -2376,6 +2378,7 @@ function Section:AddDropdown(config)
                 TextSize = 11,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 AutoButtonColor = false,
+                ZIndex = 1001,
             })
             
             optionButton:SetAttribute("ThemeTag", "ElementDropdown")
@@ -2402,9 +2405,10 @@ function Section:AddDropdown(config)
                     btn.TextColor3 = btn.Text == "  " .. tostring(selected) and Colors.Accent or Colors.Text
                 end
                 
+                -- Close dropdown
                 opened = false
-                Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 50)}, 0.2)
-                Utility.Tween(optionContainer, {Size = UDim2.new(1, -16, 0, 0)}, 0.2)
+                dropdownList.Visible = false
+                Utility.Tween(dropdownList, {Size = UDim2.new(1, -16, 0, 0)}, 0.2)
                 Utility.Tween(arrow, {Rotation = 0}, 0.2)
             end)
         end
@@ -2412,22 +2416,21 @@ function Section:AddDropdown(config)
     
     createOptions()
     
-    local function toggleDropdown()
+    dropdownButton.MouseButton1Click:Connect(function()
         opened = not opened
-        local optionHeight = math.min(#options * 24, 120) -- Max height of 120px for scrolling
+        local maxHeight = math.min(#options * 24, 120) -- Max 120px, then scroll
         
         if opened then
-            Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 50 + optionHeight + 4)}, 0.2)
-            Utility.Tween(optionContainer, {Size = UDim2.new(1, -16, 0, optionHeight)}, 0.2)
+            dropdownList.Visible = true
+            Utility.Tween(dropdownList, {Size = UDim2.new(1, -16, 0, maxHeight)}, 0.2)
             Utility.Tween(arrow, {Rotation = 180}, 0.2)
         else
-            Utility.Tween(container, {Size = UDim2.new(1, 0, 0, 50)}, 0.2)
-            Utility.Tween(optionContainer, {Size = UDim2.new(1, -16, 0, 0)}, 0.2)
+            Utility.Tween(dropdownList, {Size = UDim2.new(1, -16, 0, 0)}, 0.2)
             Utility.Tween(arrow, {Rotation = 0}, 0.2)
+            task.wait(0.2)
+            dropdownList.Visible = false
         end
-    end
-    
-    dropdownButton.MouseButton1Click:Connect(toggleDropdown)
+    end)
     
     dropdownButton.MouseEnter:Connect(function()
         Utility.Tween(dropdownStroke, {Color = Colors.Accent}, 0.15)
@@ -3497,184 +3500,188 @@ function Section:AddConditionalToggle(config)
         return toggled
     end
 
-    -- FIXED: Nested dropdown with scrolling support
-    function condObj:AddDropdown(cfg)
-        cfg = cfg or {}
-        local dropName = cfg.Name or "Dropdown"
-        local options = cfg.Options or {}
-        local dropDefault = cfg.Default
-        local dropCallback = cfg.Callback or function() end
-        local dropFlag = cfg.Flag
-        
-        local selected = dropDefault or (options[1] or "")
-        local opened = false
-        
-        local dropContainer = Utility.Create("Frame", {
-            Parent = conditionalContainer,
-            BackgroundColor3 = Colors.Dropdown,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 44),
-            ClipsDescendants = true,
-        })
-        
-        dropContainer:SetAttribute("ThemeTag", "ElementDropdown")
-        
-        local dropStroke = Utility.CreateStroke(dropContainer, Colors.Border, 1)
-        dropStroke:SetAttribute("ThemeTag", "ElementBorder")
-        
-        local dropLabel = Utility.Create("TextLabel", {
-            Parent = dropContainer,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 6, 0, 2),
-            Size = UDim2.new(1, -12, 0, 14),
-            Font = Enum.Font.Gotham,
-            Text = dropName,
-            TextColor3 = Colors.Text,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        
-        dropLabel:SetAttribute("ThemeTag", "ElementText")
-        dropLabel:SetAttribute("BaseFontSize", 10)
-        
-        local dropButton = Utility.Create("TextButton", {
-            Parent = dropContainer,
+-- FIXED: Nested dropdown (inside conditional toggle)
+function condObj:AddDropdown(cfg)
+    cfg = cfg or {}
+    local dropName = cfg.Name or "Dropdown"
+    local options = cfg.Options or {}
+    local dropDefault = cfg.Default
+    local dropCallback = cfg.Callback or function() end
+    local dropFlag = cfg.Flag
+    
+    local selected = dropDefault or (options[1] or "")
+    local opened = false
+    
+    local dropContainer = Utility.Create("Frame", {
+        Parent = conditionalContainer,
+        BackgroundColor3 = Colors.Dropdown,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 44),
+        ClipsDescendants = false, -- IMPORTANT
+    })
+    
+    dropContainer:SetAttribute("ThemeTag", "ElementDropdown")
+    
+    local dropStroke = Utility.CreateStroke(dropContainer, Colors.Border, 1)
+    dropStroke:SetAttribute("ThemeTag", "ElementBorder")
+    
+    local dropLabel = Utility.Create("TextLabel", {
+        Parent = dropContainer,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 6, 0, 2),
+        Size = UDim2.new(1, -12, 0, 14),
+        Font = Enum.Font.Gotham,
+        Text = dropName,
+        TextColor3 = Colors.Text,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    })
+    
+    dropLabel:SetAttribute("ThemeTag", "ElementText")
+    dropLabel:SetAttribute("BaseFontSize", 10)
+    
+    local dropButton = Utility.Create("TextButton", {
+        Parent = dropContainer,
+        BackgroundColor3 = Colors.BackgroundDark,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 6, 0, 18),
+        Size = UDim2.new(1, -12, 0, 20),
+        Font = Enum.Font.Gotham,
+        Text = "  " .. tostring(selected),
+        TextColor3 = Colors.Text,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        AutoButtonColor = false,
+    })
+    
+    dropButton:SetAttribute("ThemeTag", "ElementDropdown")
+    dropButton:SetAttribute("BaseFontSize", 10)
+    
+    local dropBtnStroke = Utility.CreateStroke(dropButton, Colors.Border, 1)
+    dropBtnStroke:SetAttribute("ThemeTag", "ElementBorder")
+    
+    local arrow = Utility.Create("TextLabel", {
+        Parent = dropButton,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, -16, 0, 0),
+        Size = UDim2.new(0, 16, 1, 0),
+        Font = Enum.Font.GothamBold,
+        Text = "v",
+        TextColor3 = Colors.TextDark,
+        TextSize = 8,
+    })
+    
+    arrow:SetAttribute("ThemeTag", "ElementTextDark")
+    arrow:SetAttribute("BaseFontSize", 8)
+    
+    -- Dropdown list (appears below)
+    local optContainer = Utility.Create("ScrollingFrame", {
+        Parent = dropContainer,
+        BackgroundColor3 = Colors.BackgroundDark,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 6, 1, 2),
+        Size = UDim2.new(1, -12, 0, 0),
+        ClipsDescendants = true,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Colors.Accent,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+        ZIndex = 1000,
+    })
+    
+    optContainer:SetAttribute("ThemeTag", "ElementDropdown")
+    
+    local optStroke = Utility.CreateStroke(optContainer, Colors.Border, 1)
+    optStroke:SetAttribute("ThemeTag", "ElementBorder")
+    
+    Utility.Create("UIListLayout", {
+        Parent = optContainer,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+    
+    local optButtons = {}
+    
+    for _, opt in pairs(options) do
+        local optBtn = Utility.Create("TextButton", {
+            Parent = optContainer,
             BackgroundColor3 = Colors.BackgroundDark,
             BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 18),
-            Size = UDim2.new(1, -12, 0, 20),
+            Size = UDim2.new(1, 0, 0, 20),
             Font = Enum.Font.Gotham,
-            Text = "  " .. tostring(selected),
-            TextColor3 = Colors.Text,
+            Text = "  " .. tostring(opt),
+            TextColor3 = opt == selected and Colors.Accent or Colors.Text,
             TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
             AutoButtonColor = false,
+            ZIndex = 1001,
         })
         
-        dropButton:SetAttribute("ThemeTag", "ElementDropdown")
-        dropButton:SetAttribute("BaseFontSize", 10)
+        optBtn:SetAttribute("ThemeTag", "ElementDropdown")
+        optBtn:SetAttribute("BaseFontSize", 10)
         
-        local dropBtnStroke = Utility.CreateStroke(dropButton, Colors.Border, 1)
-        dropBtnStroke:SetAttribute("ThemeTag", "ElementBorder")
+        table.insert(optButtons, optBtn)
         
-        local arrow = Utility.Create("TextLabel", {
-            Parent = dropButton,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(1, -16, 0, 0),
-            Size = UDim2.new(0, 16, 1, 0),
-            Font = Enum.Font.GothamBold,
-            Text = "v",
-            TextColor3 = Colors.TextDark,
-            TextSize = 8,
-        })
-        
-        arrow:SetAttribute("ThemeTag", "ElementTextDark")
-        arrow:SetAttribute("BaseFontSize", 8)
-        
-        -- FIXED: ScrollingFrame for nested dropdown
-        local optContainer = Utility.Create("ScrollingFrame", {
-            Parent = dropContainer,
-            BackgroundColor3 = Colors.BackgroundDark,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 40),
-            Size = UDim2.new(1, -12, 0, 0),
-            ClipsDescendants = true,
-            ScrollBarThickness = 4,
-            ScrollBarImageColor3 = Colors.Accent,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        })
-        
-        optContainer:SetAttribute("ThemeTag", "ElementDropdown")
-        
-        local optStroke = Utility.CreateStroke(optContainer, Colors.Border, 1)
-        optStroke:SetAttribute("ThemeTag", "ElementBorder")
-        
-        Utility.Create("UIListLayout", {
-            Parent = optContainer,
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        })
-        
-        local optButtons = {}
-        
-        for _, opt in pairs(options) do
-            local optBtn = Utility.Create("TextButton", {
-                Parent = optContainer,
-                BackgroundColor3 = Colors.BackgroundDark,
-                BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 20),
-                Font = Enum.Font.Gotham,
-                Text = "  " .. tostring(opt),
-                TextColor3 = opt == selected and Colors.Accent or Colors.Text,
-                TextSize = 10,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                AutoButtonColor = false,
-            })
-            
-            optBtn:SetAttribute("ThemeTag", "ElementDropdown")
-            optBtn:SetAttribute("BaseFontSize", 10)
-            
-            table.insert(optButtons, optBtn)
-            
-            optBtn.MouseEnter:Connect(function()
-                Utility.Tween(optBtn, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.1)
-            end)
-            
-            optBtn.MouseLeave:Connect(function()
-                Utility.Tween(optBtn, {BackgroundColor3 = Colors.BackgroundDark, TextColor3 = opt == selected and Colors.Accent or Colors.Text}, 0.1)
-            end)
-            
-            optBtn.MouseButton1Click:Connect(function()
-                selected = opt
-                dropButton.Text = "  " .. tostring(selected)
-                dropCallback(selected)
-                if dropFlag then Library.Flags[dropFlag] = selected end
-                
-                for _, btn in pairs(optButtons) do
-                    btn.TextColor3 = btn.Text == "  " .. tostring(selected) and Colors.Accent or Colors.Text
-                end
-                
-                opened = false
-                Utility.Tween(dropContainer, {Size = UDim2.new(1, 0, 0, 44)}, 0.2)
-                Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, 0)}, 0.2)
-                Utility.Tween(arrow, {Rotation = 0}, 0.2)
-                task.spawn(updateSize)
-            end)
-        end
-        
-        dropButton.MouseButton1Click:Connect(function()
-            opened = not opened
-            local optHeight = math.min(#options * 20, 100) -- Max 100px for nested
-            
-            if opened then
-                Utility.Tween(dropContainer, {Size = UDim2.new(1, 0, 0, 44 + optHeight + 2)}, 0.2)
-                Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, optHeight)}, 0.2)
-                Utility.Tween(arrow, {Rotation = 180}, 0.2)
-            else
-                Utility.Tween(dropContainer, {Size = UDim2.new(1, 0, 0, 44)}, 0.2)
-                Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, 0)}, 0.2)
-                Utility.Tween(arrow, {Rotation = 0}, 0.2)
-            end
-            task.spawn(updateSize)
+        optBtn.MouseEnter:Connect(function()
+            Utility.Tween(optBtn, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.PastelCream}, 0.1)
         end)
         
-        if dropFlag then
-            Library.Flags[dropFlag] = selected
-        end
+        optBtn.MouseLeave:Connect(function()
+            Utility.Tween(optBtn, {BackgroundColor3 = Colors.BackgroundDark, TextColor3 = opt == selected and Colors.Accent or Colors.Text}, 0.1)
+        end)
         
-        task.spawn(updateSize)
-        
-        return {
-            Set = function(_, value)
-                selected = value
-                dropButton.Text = "  " .. tostring(selected)
-                dropCallback(selected)
-            end,
-            Get = function()
-                return selected
+        optBtn.MouseButton1Click:Connect(function()
+            selected = opt
+            dropButton.Text = "  " .. tostring(selected)
+            dropCallback(selected)
+            if dropFlag then Library.Flags[dropFlag] = selected end
+            
+            for _, btn in pairs(optButtons) do
+                btn.TextColor3 = btn.Text == "  " .. tostring(selected) and Colors.Accent or Colors.Text
             end
-        }
+            
+            opened = false
+            optContainer.Visible = false
+            Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, 0)}, 0.2)
+            Utility.Tween(arrow, {Rotation = 0}, 0.2)
+            task.spawn(updateSize)
+        end)
     end
+    
+    dropButton.MouseButton1Click:Connect(function()
+        opened = not opened
+        local optHeight = math.min(#options * 20, 100)
+        
+        if opened then
+            optContainer.Visible = true
+            Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, optHeight)}, 0.2)
+            Utility.Tween(arrow, {Rotation = 180}, 0.2)
+        else
+            Utility.Tween(optContainer, {Size = UDim2.new(1, -12, 0, 0)}, 0.2)
+            Utility.Tween(arrow, {Rotation = 0}, 0.2)
+            task.wait(0.2)
+            optContainer.Visible = false
+        end
+        task.spawn(updateSize)
+    end)
+    
+    if dropFlag then
+        Library.Flags[dropFlag] = selected
+    end
+    
+    task.spawn(updateSize)
+    
+    return {
+        Set = function(_, value)
+            selected = value
+            dropButton.Text = "  " .. tostring(selected)
+            dropCallback(selected)
+        end,
+        Get = function()
+            return selected
+        end
+    }
+end
 
     -- FIXED: Nested multi-dropdown with scrolling
     function condObj:AddMultiDropdown(cfg)
